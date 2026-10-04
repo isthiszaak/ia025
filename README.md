@@ -30,13 +30,22 @@ Before you begin, ensure you have the following installed on your host machine:
 
 ## 🚀 Quick Start
 
-**1. Start the Containers**
+**1. Clone the Repository**
+
+```bash
+git clone git@github.com:isthiszaak/ia025.git
+```
+
+Also, adjust the `.env` file to set any necessary environment variables.
+
+**2. Start the Containers**
 The project includes a smart Makefile that automatically detects if you have an NVIDIA GPU available and routes to the correct Docker Compose configuration.
 
 ```bash
 make up
 ```
-**2. Access the Chat UI**
+
+**3. Access the Chat UI**
 Once the model is downloaded, open your browser and navigate to:
 
 * **http://localhost:8501**
