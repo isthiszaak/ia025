@@ -34,18 +34,38 @@ Before you begin, ensure you have the following installed on your host machine:
 
 ```bash
 git clone git@github.com:isthiszaak/ia025.git
+cd ia025
+
 ```
 
-Also, adjust the `.env` file to set any necessary environment variables.
+**2. Set Up Environment Variables (Ollama Setup)**
+The project uses an environment file to determine which LLM to run. Copy the provided example file:
 
-**2. Start the Containers**
+```bash
+cp .env.example .env
+
+```
+
+Open the `.env` file in your editor and define your desired model. For example:
+
+```env
+OLLAMA_MODEL=qwen2.5:1.5b
+
+```
+
+*(The Ollama container is configured to read this variable and automatically pull the model when it starts).*
+
+**3. Start the Containers**
 The project includes a smart Makefile that automatically detects if you have an NVIDIA GPU available and routes to the correct Docker Compose configuration.
 
 ```bash
 make up
+
 ```
 
-**3. Access the Chat UI**
+*Note: Once the containers start, Ollama will automatically begin downloading the model specified in your `.env` file. This can take a few minutes depending on your internet connection.*
+
+**4. Access the Chat UI**
 Once the model is downloaded, open your browser and navigate to:
 
 * **http://localhost:8501**
@@ -62,7 +82,6 @@ You can manage the entire lifecycle of the application using the provided `Makef
 | `make logs` | Tails the live logs for both Streamlit and Ollama services. |
 | `make clean-all` | **Deep Clean:** Stops all containers and completely removes Docker volumes (deletes downloaded models and databases). |
 
-
 ## ⚠️ Troubleshooting
 
 **"Address already in use" Error on Startup**
@@ -71,4 +90,4 @@ If you have a native version of Ollama (or an extension like Continue in VS Code
 * **Solution:** Kill the conflicting host processes and try again. The project maps Ollama to port `11435` on the host to minimize these collisions while keeping internal Docker communication on `11434`.
 
 **Chatbot is unresponsive or throwing connection errors**
-Ensure the model finished downloading completely. This can take a while depending on your internet. You can monitor the backend activity by running `make logs`.
+Ensure the model finished downloading completely. If you just ran `make up` for the first time, Ollama is likely still pulling the weights. You can monitor the download progress and backend activity by running `make logs`.
