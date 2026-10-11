@@ -3,10 +3,11 @@
 # Detect if an NVIDIA GPU is available on the host machine
 HAS_GPU := $(shell nvidia-smi > /dev/null 2>&1 && echo yes || echo no)
 
-# Defines docker compose flags based on GPU availability
-COMPOSE_FLAGS := -f docker-compose.cpu.yaml
+# Defines docker compose flags mutually exclusively
 ifeq ($(HAS_GPU),yes)
-    COMPOSE_FLAGS += -f docker-compose.gpu.yaml
+    COMPOSE_FLAGS := -f docker-compose.gpu.yaml
+else
+    COMPOSE_FLAGS := -f docker-compose.cpu.yaml
 endif
 
 # Brings up the containers in the background
@@ -27,6 +28,11 @@ down:
 # Brings down, removes orphans, forces a rebuild of the images, and brings up
 rebuild:
 	@echo "Rebuilding all containers..."
+	@if [ "$(HAS_GPU)" = "yes" ]; then \
+		echo "NVIDIA GPU detected! Starting containers with GPU acceleration..."; \
+	else \
+		echo "No NVIDIA GPU detected. Starting containers in CPU mode..."; \
+	fi
 	docker compose $(COMPOSE_FLAGS) up -d --build
 	@echo "All containers have been rebuilt and started."
 	@echo "If the Ollama container has been rebuilt, wait for Ollama to finish pulling the model before using the frontend. This may take a few minutes."

@@ -1,2 +1,0 @@
-streamlit
-langchain_ollama

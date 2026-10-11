@@ -1,6 +1,8 @@
 import streamlit as st
-from langchain_ollama import OllamaLLM
+from backend.llm import get_llm
+from langchain_core.prompts import PromptTemplate
 
+# Set page configuration and title
 st.set_page_config(page_title="Local LLM Chatbot", page_icon="🤖")
 st.title("🤖 Local LLM Chatbot")
 st.write("This is a simple chatbot interface that uses a local LLM model served by Ollama. You can type your messages below and receive responses from the model.")
@@ -8,13 +10,20 @@ st.warning("COLD START WARNING: The first time you run this app, it may take a f
 
 # Initialize local LLM client
 @st.cache_resource
-def get_llm():
-    return OllamaLLM(
-        model="qwen2.5:1.5b",
-        base_url="http://ollama:11434"
-    )
+def load_llm():
+    return get_llm()
 
-llm = get_llm()
+llm = load_llm()
+
+template = """Your name is Bob. 
+User question: {user_input}
+Answer:"""
+
+prompt_template = PromptTemplate(
+    input_variables=["user_input"],
+    template=template
+)
+
 
 # Initialize message history
 if "messages" not in st.session_state:
@@ -34,8 +43,10 @@ if prompt := st.chat_input("Type a message..."):
 
     # Stream response from Ollama
     with st.chat_message("assistant"):
-        response_stream = llm.stream(prompt)
-        full_response = st.write_stream(response_stream)
+        
+        chain = prompt_template | llm
+        full_response = chain.invoke({"user_input": prompt})
+        st.write(full_response)
 
     # Save response to history
     st.session_state.messages.append({"role": "assistant", "content": full_response})
