@@ -1,0 +1,5 @@
+ragas==0.4.3
+# RAGAS imports chat_models.vertexai, removed in langchain-community 0.4.2.
+langchain-community==0.4.1
+openai>=1.0.0
+python-dotenv>=1.0.0

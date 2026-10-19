@@ -59,6 +59,8 @@ def run_evaluation(
                     if not isinstance(case, dict):
                         raise ValueError("Each case must be a JSON object")
                     record["case_id"] = case.get("case_id", record["case_id"])
+                    if "reference" in case:
+                        record["reference"] = case["reference"]
                     question = case.get("user_input")
                     if not isinstance(question, str) or not question.strip():
                         raise ValueError("user_input must be a nonempty string")

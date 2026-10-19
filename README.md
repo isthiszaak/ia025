@@ -84,8 +84,8 @@ You can manage the entire lifecycle of the application using the provided `Makef
 
 ## Offline Evaluation & QA
 
-This first stage collects predictions only; it does not compute RAGAS metrics or
-retrieve documents. `retrieved_contexts` is always an empty list.
+Generation and scoring are independent offline stages. Generation does not run
+RAGAS or retrieve documents; `retrieved_contexts` is always an empty list.
 
 From the repository root, in a Python environment with the dependencies in
 `app/requirements.txt` installed, run:
@@ -130,6 +130,84 @@ Generated results are ignored by Git. To use other input or output paths:
 ```bash
 python -m app.evaluation.runner --cases evaluation_data/cases.jsonl --output-dir evaluation_results
 ```
+
+### Score existing predictions with RAGAS
+
+Install the optional evaluation dependencies in your Python environment:
+
+```bash
+python -m pip install -r app/evaluation/requirements.txt
+```
+
+The adapter targets RAGAS **0.4.3**, using `ragas.metrics.collections` and modern
+LLM/embedding factories rather than legacy LangChain wrappers. These dependencies
+pin `langchain-community==0.4.1` because `0.4.2` removes the Vertex AI module
+imported by RAGAS 0.4.3, even when using another model provider. They
+are separate from the chatbot's requirements; the chatbot Docker image does not
+install RAGAS by default.
+
+Configure `EVAL_LLM_MODEL` and `EVAL_EMBEDDING_MODEL` explicitly in `.env` or the
+environment. They do not inherit `OLLAMA_MODEL`. See `.env.example` for all
+settings. Both evaluator endpoints use the OpenAI-compatible API (including
+Ollama's `/v1` endpoint), with separate URLs and optional API keys. A local Ollama
+instance normally uses port `11434`; the Compose instance exposes port `11435`
+on the host. The evaluator LLM must support structured JSON output, and the
+embedding endpoint must support the selected embedding model. Models must already
+be available; this command does not download them.
+
+Run scoring against the predictions you already generated:
+
+```bash
+python -m app.evaluation.ragas_adapter evaluation_results/<run_id>/predictions.jsonl
+```
+
+This command never regenerates chatbot responses. It writes `scores.jsonl` and
+`summary.json` beside the predictions, and adds an `evaluation` section to
+`manifest.json`, preserving generation metadata. That section records model and
+embedding configuration, RAGAS version, API, metric settings and UTC timestamp;
+API keys are not recorded. Existing scores are protected from overwriting. To
+evaluate the same predictions again, select another output directory:
+
+```bash
+python -m app.evaluation.ragas_adapter evaluation_results/<run_id>/predictions.jsonl --output-dir evaluation_results/<run_id>/another_evaluation
+```
+
+The separate output directory receives its own scores, summary and a manifest
+carrying the original generation metadata plus the new evaluator configuration.
+
+- **Answer Relevancy** measures response relevance to the question using the
+  evaluator LLM and embeddings, without requiring retrieved contexts.
+- **Answer Correctness** runs only when the prediction contains a nonempty string
+  `reference`, using RAGAS's default factuality/similarity weights of `0.75/0.25`.
+  Add an optional `reference` field to dataset cases; the generation runner now
+  copies it to predictions as metadata and does not send it to the generator.
+  Previously saved predictions without this field remain evaluable for relevancy.
+- **Faithfulness, Context Precision and Context Recall** are disabled in this
+  stage, including when an input happens to contain contexts.
+
+Every score row identifies the prediction's line and case ID, and contains
+`scores`, `metric_status` and reasons for unavailable metrics. Missing references
+and disabled metrics are `null` with `not_applicable` status. Failed generation
+records are `skipped`. Metric exceptions, timeouts and nonfinite results are
+`null` with `error` status; one metric failing does not prevent the other metric
+or subsequent cases from running. Malformed prediction lines are also recorded.
+Configuration, missing-file and output filesystem errors are command failures.
+
+`summary.json` reports `mean`, population `stddev`, `valid_count`, `failure_count`,
+`not_applicable_count` and `skipped_count` for every metric. Only successful finite
+scores enter the statistics. With no valid scores, mean and deviation are `null`;
+with one valid score, the population deviation is `0`. A genuine zero score is
+retained as a valid observation. Relevancy does not measure factual accuracy, and
+these scores are not a substitute for human review.
+
+Run adapter tests without requiring an Ollama server:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+When RAGAS is installed, the suite also exercises the actual metric factories and
+collections API against mocked HTTP responses, without contacting a model server.
 
 ## ⚠️ Troubleshooting
 
