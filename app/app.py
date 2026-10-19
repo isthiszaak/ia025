@@ -1,7 +1,7 @@
 import streamlit as st
 from backend.llm import get_llm
+from backend.pipeline import run_query
 from backend.prompts import CHAT_TEMPLATE
-from langchain_core.prompts import PromptTemplate
 
 # Set page configuration and title
 st.set_page_config(page_title="Local LLM Chatbot", page_icon="🤖")
@@ -55,16 +55,10 @@ with chat_tab:
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Build dynamic prompt template from session state
-        dynamic_prompt_template = PromptTemplate(
-            input_variables=["user_input"],
-            template=st.session_state.prompt_template_text
-        )
-
         # Stream/Invoke response from Ollama
         with st.chat_message("assistant"):
-            chain = dynamic_prompt_template | llm
-            full_response = chain.invoke({"user_input": prompt})
+            result = run_query(prompt, llm, st.session_state.prompt_template_text)
+            full_response = result.response
             st.write(full_response)
 
         # Save response to history

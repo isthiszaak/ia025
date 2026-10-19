@@ -222,3 +222,6 @@ __marimo__/
 
 git_key
 git_key.pub
+
+# Offline evaluation outputs
+evaluation_results/

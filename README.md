@@ -82,6 +82,55 @@ You can manage the entire lifecycle of the application using the provided `Makef
 | `make logs` | Tails the live logs for both Streamlit and Ollama services. |
 | `make clean-all` | **Deep Clean:** Stops all containers and completely removes Docker volumes (deletes downloaded models and databases). |
 
+## Offline Evaluation & QA
+
+This first stage collects predictions only; it does not compute RAGAS metrics or
+retrieve documents. `retrieved_contexts` is always an empty list.
+
+From the repository root, in a Python environment with the dependencies in
+`app/requirements.txt` installed, run:
+
+```bash
+python -m app.evaluation.runner
+```
+
+Ollama must be running with the configured model available. The runner uses the
+same `get_llm()` configuration and generation function as the chatbot, without
+importing Streamlit. It uses the default `CHAT_TEMPLATE`; edits made in the chat
+prompt editor apply only to that Streamlit session. For an Ollama instance started
+by this project's Docker Compose, use its host port when running the runner on
+the host:
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11435 python -m app.evaluation.runner
+```
+
+Cases are read from `evaluation_data/cases.jsonl`, one JSON object per line:
+
+```json
+{"case_id": "example_001", "user_input": "Quanto é 2 + 2?"}
+```
+
+`user_input` must be a nonempty string. `case_id` is optional and defaults to the
+line number (`line_1`, etc.). The bundled cases are smoke examples, not a quality
+benchmark. Blank lines are ignored. Invalid cases and generation failures produce
+error records, and processing continues with the next line. Startup failures such
+as a missing input file are reported as command errors.
+
+Each execution creates `evaluation_results/<run_id>/` containing:
+
+- `predictions.jsonl`: case ID, input line number, question, response, empty
+  contexts, latency in seconds and status. Error records include `error_type`
+  and `error`, with a null response.
+- `manifest.json`: run ID, UTC timestamp, model, temperature, effective prompt
+  template, input path, total cases, successful cases and cases with errors.
+
+Generated results are ignored by Git. To use other input or output paths:
+
+```bash
+python -m app.evaluation.runner --cases evaluation_data/cases.jsonl --output-dir evaluation_results
+```
+
 ## ⚠️ Troubleshooting
 
 **"Address already in use" Error on Startup**
