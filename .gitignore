@@ -222,3 +222,10 @@ __marimo__/
 
 git_key
 git_key.pub
+
+# Local retrieval tools, environments, data, and outputs
+.tools/
+.venv-retrieval/
+data/retrieval/
+retrieval_results/
+.cache/
