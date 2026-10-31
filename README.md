@@ -167,7 +167,7 @@ Configure `EVAL_LLM_MODEL` and `EVAL_EMBEDDING_MODEL` explicitly (these do **not
 * **API Compatibility**: Both evaluator endpoints use OpenAI-compatible `/v1` endpoints (e.g., Ollama's `/v1`).
 * **Port Mapping**: Local Ollama typically uses port `11434`; Compose host port uses `11435`.
 * **Requirements**: Evaluator LLM must support structured JSON output; embedding endpoint must support the target model.
-* **Pre-requisite Models**: Ensure target models are already pulled (`ollama pull <model-name>`).
+* **Pre-requisite Models**: Ensure target models are already pulled (`ollama pull <model-name>`). If you have a Ollama running container, you can use `docker exec <container-id> ollama pull <model-name>` to pull models.
 
 ---
 
