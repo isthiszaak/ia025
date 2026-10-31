@@ -120,10 +120,18 @@ with chat_tab:
         with st.chat_message("assistant"):
 
             try:
+                # Build conversation history
+                chat_history = "\n".join(
+                    [
+                        f"{message['role']}: {message['content']}"
+                        for message in st.session_state.messages[:-1]
+                    ]
+                )
                 result = run_query(
                     prompt,
                     llm,
-                    st.session_state.prompt_template_text
+                    st.session_state.prompt_template_text,
+                    chat_history
                 )
 
                 full_response = result.response

@@ -19,15 +19,16 @@ def run_query(
     user_input: str,
     llm: Runnable,
     prompt_template: str = CHAT_TEMPLATE,
+    chat_history: str = ""
 ) -> GenerationResult:
     """Run the same single-question generation used by chat and offline QA."""
     started = perf_counter()
     template = PromptTemplate(
-        input_variables=["user_input"],
+        input_variables=[ "chat_history", "user_input"],
         template=prompt_template,
     )
     chain = template | llm
-    response = chain.invoke({"user_input": user_input})
+    response = chain.invoke({"chat_history": chat_history, "user_input": user_input})
     return GenerationResult(
         user_input=user_input,
         response=response,
