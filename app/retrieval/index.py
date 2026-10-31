@@ -77,7 +77,7 @@ def _client(directory):
 
 def dependency_versions():
     result = {"python": platform.python_version()}
-    for package in ("chromadb", "python-dotenv"):
+    for package in ("chromadb", "python-dotenv", "tokenizers"):
         try:
             result[package] = version(package)
         except PackageNotFoundError:
@@ -93,8 +93,9 @@ def build_index(config=None, embedder=None):
     documents = load_documents(config.data_dir / "prepared")
     if identity["document_ids"] is not None:
         documents = [document for document in documents if document.id in identity["document_ids"]]
-    chunks = list(chunk_documents(documents,
-                                  config.chunk_size, config.chunk_overlap))
+    chunks = list(chunk_documents(documents, config.chunk_size, config.chunk_overlap,
+                                  chunk_unit=config.chunk_unit,
+                                  tokenizer=config.load_tokenizer() if config.chunk_unit == "tokens" else None))
     if not chunks:
         raise RetrievalIndexError("Corpus sem trechos; nenhum índice foi criado")
     config.index_dir.mkdir(parents=True, exist_ok=True)

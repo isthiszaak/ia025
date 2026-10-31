@@ -227,5 +227,6 @@ git_key.pub
 .tools/
 .venv-retrieval/
 data/retrieval/
+data/retrieval-carf/
 retrieval_results/
 .cache/

@@ -106,10 +106,14 @@ duplicates while retaining all source filenames as aliases.
 - `referred_legal_documents_QA_2024_v1.1.json`: 478 records, yielding 461 unique
   legal documents and 17 duplicate records.
 - `questions_QA_2024_v1.1.json`: 715 questions, answers, and original references.
-  These are prepared separately; expected answers are not indexed. CARF is not
-  included in this baseline.
+  These are prepared separately; expected answers are not indexed.
+- `acordaos_CARF_2023.json`: 7,204 case-law documents, verified in the same
+  pinned revision. Opt in with `prepare --include-carf`; the combined corpus has
+  7,665 unique documents. This file has no QA pairs, and the 715 questions have
+  no explicit CARF file references. No CARF relevance labels are inferred.
 - `retrieval_data/baseline_irpf.json`: the default index selects three documents:
-  Lei nº 9.250/1995, IN RFB nº 2.178, and Lei nº 7.713. This produces 142 chunks.
+  Lei nº 9.250/1995, IN RFB nº 2.178, and Lei nº 7.713. The historical character
+  configuration (1,200/200) produced 142 chunks; token configurations differ.
   Use `--selection all` to build a separate index for all 461 documents.
 
 The initial selection is a small integration baseline with limited subject
@@ -119,16 +123,28 @@ historical redactions. Smoke questions have no invented relevance labels.
 | Setting | Default |
 | --- | --- |
 | Embedding model | `embeddinggemma:300m`, 768 dimensions |
-| Chunk size / overlap | 1,200 / 200 Python Unicode characters |
+| CLI chunk size / overlap | 512 / 50 tokens; planned sizes: 256, 512, 1024 |
+| Tokenizer | EmbeddingGemma tokenizer, `tokenizers==0.22.2`, pinned revision below |
 | Distance | Cosine distance (`1 - cosine_similarity`); lower is closer |
 | Top-k / embedding batch size | 5 / 32 |
 | Data / index | `data/retrieval/` / `data/retrieval/chroma/` |
 
-Chunking prefers paragraph, sentence, line, and word boundaries, with hard cuts
-when needed. Each chunk retains its source, stable IDs, and `[start_char,
-end_char)` offsets in the normalized document. The embedding profile applies
-EmbeddingGemma's document/query prefixes. Its 2,048-token input limit is enforced
-with Ollama's `truncate:false`; reduce chunk size if an input exceeds it.
+Token chunking uses the actual EmbeddingGemma vocabulary from
+[`onnx-community/embeddinggemma-300m-ONNX`](https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/tree/8cd82455fa7fae53af154775fd1494f5577ef4b0),
+revision `8cd82455fa7fae53af154775fd1494f5577ef4b0`, with `tokenizer.json` SHA256
+`4dda02faaf32bc91031dc8c88457ac272b00c1016cc679757d1c441b248b9c47`.
+Only the tokenizer is downloaded, not ONNX model weights; embeddings remain in
+Ollama. Token counts are never estimated from character counts.
+
+Chunks are exact slices of the normalized document with stable IDs, source
+aliases, character offsets, original-document token offsets and independently
+checked token counts. Unicode byte-fallback boundaries retain complete
+characters; rare overlap adjustments are recorded as `actual_overlap_tokens`.
+The configurable 50-token overlap is an implementation choice and stays constant
+across comparisons, always below 256. Prefixes, titles and special tokens do not
+count toward chunk size but do count toward the 2,048-token embedding input
+limit. Oversized complete inputs fail before HTTP; Ollama also receives
+[`truncate:false`](https://docs.ollama.com/api/embed). No text is silently cut.
 
 ### Setup and commands on Windows
 
@@ -155,6 +171,11 @@ $env:RETRIEVAL_OLLAMA_BASE_URL = 'http://localhost:11435'
 # Build or resume the selected corpus; repeated builds reuse existing chunks.
 .\scripts\retrieval\build.ps1
 .\scripts\retrieval\query.ps1 'Quem pode ser dependente no IRPF?'
+
+# Prepare the legal + CARF corpus separately, preserving the small legal setup.
+& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval prepare --include-carf --data-dir data/retrieval-carf --raw-dir data/retrieval/raw/9f0f4263928c6152a40f888da3e63375a24bb0f3
+.\scripts\retrieval\build.ps1 -UsePrepared -DataDir data/retrieval-carf -IndexDir data/retrieval-carf/chroma -Selection all
+.\scripts\retrieval\query.ps1 'Quem pode ser dependente no IRPF?' -DataDir data/retrieval-carf -IndexDir data/retrieval-carf/chroma -Selection all
 ```
 
 If needed, setup accepts `-Python 'C:\path with spaces\python.exe'`. The optional
@@ -164,7 +185,7 @@ ignored local directories; no Ollama binary or model weights are versioned.
 
 The cache is `data/retrieval/raw/<revision>/`. Prepared artifacts are
 `prepared/corpus.jsonl`, `prepared/questions.jsonl`, and `prepared/manifest.json`.
-`prepare --raw-dir <directory>` can read the two upstream JSON files locally;
+`prepare --raw-dir <directory>` can read the upstream JSON files locally;
 `--revision` requires a pinned 40-character Git SHA. Empty/invalid records and
 exact duplicates are reported in the preparation manifest.
 
@@ -196,7 +217,8 @@ Original `all_formatted_references` remain available. References are metadata;
 only the question is embedded. The manifest records effective configuration,
 corpus/model identity, dependency versions, and the input file hash.
 Without `--output-dir`, one question prints JSON and cases print JSONL.
-The command exits nonzero on errors. Saved retrieval results are available for
+Index-opening failures are also saved, with corpus/configuration, error stage,
+and null search latency when no search occurred. The command exits nonzero on errors. Saved retrieval results are available for
 downstream answer generation.
 
 ### Configuration and index reuse
@@ -211,30 +233,72 @@ are configurable without editing code.
 # Same index, different number of results.
 & '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval query 'Quem pode ser dependente no IRPF?' --top-k 3
 
-# Different chunking requires a corresponding index.
-& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval build --chunk-size 800 --chunk-overlap 200
-& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval query 'Quem pode ser dependente no IRPF?' --chunk-size 800 --chunk-overlap 200
+# Different token chunking requires a corresponding index.
+& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval build --use-prepared --chunk-unit tokens --chunk-size 256 --chunk-overlap 50
+& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval query 'Quem pode ser dependente no IRPF?' --chunk-unit tokens --chunk-size 256 --chunk-overlap 50
 
 # Optional full legal corpus, stored in a separate collection.
-& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval build --selection all
+& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval build --use-prepared --selection all
 & '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval query 'Quem pode ser dependente no IRPF?' --selection all
 ```
 
 The collection fingerprint includes the corpus hash, selected document IDs,
-model digest, dimensions, embedding profile, chunking version/parameters, and
+model digest, dimensions, embedding profile, chunking unit/version/parameters,
+tokenizer identifier/revision/file hash/library version (in token mode), and
 distance. Top-k does not change index identity. Missing, incompatible, or
 incomplete indexes cause explicit errors; query never creates an empty index.
 Reopening requires the prepared corpus and manifest as well as Chroma storage.
 An interrupted build can resume missing chunks. If a hard termination leaves a
 `.build.lock`, remove only that lock after confirming no build is active.
 
-Run the 40 retrieval tests with `.\scripts\retrieval\test.ps1`. They cover data preparation,
+For compatibility, `RetrievalConfig()` and `chunk_documents(...)` keep their
+original character defaults. Use `RetrievalConfig.from_env()` for the new token
+defaults, or set `chunk_unit="tokens", chunk_size=512, chunk_overlap=50` explicitly.
+An older `.env` with size/overlap but no unit retains character interpretation;
+set `RETRIEVAL_CHUNK_UNIT=tokens` and update both numbers when migrating.
+To reproduce the old baseline explicitly, pass `--chunk-unit characters
+--chunk-size 1200 --chunk-overlap 200` to both build and query.
+`build --use-prepared` consumes the prepared corpus without downloading or
+replacing it; without this flag build retains its original prepare-then-build
+behavior, with CARF included only when `--include-carf` is explicit.
+
+Run retrieval tests with `.\scripts\retrieval\test.ps1`. They cover data preparation,
 HTTP failures/validation, persistent Chroma, separate-process reopening,
 idempotence, configuration compatibility, and corpus selection. Chroma tests
 use a real temporary database with deterministic simulated embeddings; they do
 not require Ollama or establish retrieval quality. Real-service checks can be
 repeated by building twice and querying in a fresh process. Data, indexes,
 models, virtual environments, logs, and generated run records are ignored by Git.
+
+### Planned retrieval comparisons and handoff
+
+Prepare the chosen corpus first. The following builds/resumes three token
+indexes and runs five unique settings: `(256,3)`, `(512,3)`, `(1024,3)`, `(512,1)`,
+`(512,5)`. Chunk size varies at top-k 3; top-k varies at size 512. Overlap, corpus,
+tokenizer and embedding model stay fixed. Omitting `-BuildIndexes` reuses indexes.
+
+```powershell
+.\scripts\retrieval\compare.ps1 -Cases data/retrieval/prepared/questions.jsonl -Limit 10 -OutputDir retrieval_results -Selection all -ChunkOverlap 50 -BuildIndexes
+# Equivalent CLI; omit --limit to use all 715 questions.
+& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval compare --cases data/retrieval/prepared/questions.jsonl --limit 10 --output-dir retrieval_results --selection all --chunk-unit tokens --chunk-overlap 50 --build-indexes
+# Offline tokenizer/content/input-limit audit; does not require Ollama.
+& '.\.venv-retrieval\Scripts\python.exe' scripts/retrieval/validate_tokens.py --data-dir data/retrieval --report data/retrieval/token_validation.json
+```
+
+Comparison manifests and JSONL retain effective configuration, corpus/model
+identity, tokenizer, case IDs, original references, chunks, sources, distances,
+search latency and failures. No relevance metrics or answer-quality scores are
+computed. Distances describe vector proximity only. The Python interface above
+and saved JSONL are the handoff to the generation/evaluation owners; these
+changes do not connect to their LLM, prompts, evaluator or UI.
+
+Verified counts and source schemas are in [data validation](docs/data-validation.md),
+token budgets in [token validation](docs/token-validation.md), and execution
+results/limitations in [Member 1 validation](docs/member1-validation.md).
+The [second-dataset analysis](docs/second-dataset.md) recommends LARI for a
+different domain, or JurisTCU when explicit retrieval relevance judgments are
+the priority. Selection remains with the group; no second-dataset ingestion was
+implemented.
 
 ## ⚠️ Troubleshooting
 

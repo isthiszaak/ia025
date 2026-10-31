@@ -23,6 +23,7 @@ DATASET = "unicamp-dl/BR-TaxQA-R"
 DEFAULT_REVISION = "9f0f4263928c6152a40f888da3e63375a24bb0f3"
 CORPUS_FILENAME = "referred_legal_documents_QA_2024_v1.1.json"
 QUESTIONS_FILENAME = "questions_QA_2024_v1.1.json"
+CARF_FILENAME = "acordaos_CARF_2023.json"
 NORMALIZATION = "NFC+LF+outer-strip-v1"
 SCHEMA_VERSION = 1
 # Corpus SHA256 is the published Hugging Face LFS OID. Questions are stored as
@@ -30,6 +31,7 @@ SCHEMA_VERSION = 1
 PINNED_SOURCE_SHA256 = {
     CORPUS_FILENAME: "49ade2d93ed8f7361274bc93a0fa3d6572a2b938aeb1d343494acd2aa23aecd3",
     QUESTIONS_FILENAME: "097abfc4f885ea36e512e6beae39a826b981191aa0b320960828e51ccc081585",
+    CARF_FILENAME: "2fca2a7f0bc89c08f1eefb04ee4167a98c9fc170af25c1ac2468098c9eb079bd",
 }
 PINNED_QUESTIONS_GIT_BLOB = "3c5c41f20795925747a1b3c5d9f23d2be15ed54d"
 
@@ -167,7 +169,11 @@ def _report(total: int, accepted: int, discarded: list[dict[str, Any]]) -> dict[
     }
 
 
-def _prepare_documents(rows: list[Any], revision: str) -> tuple[list[Document], dict[str, Any]]:
+def _prepare_documents(
+    rows: list[Any], revision: str, *,
+    subset: str = "legal_documents_v1.1", dataset_file: str = CORPUS_FILENAME,
+    dataset_file_url: str | None = None,
+) -> tuple[list[Document], dict[str, Any]]:
     # Comparing the normalized strings themselves proves duplicates; hashes only
     # provide compact IDs. Alias filenames remain available for source matching.
     by_text: dict[str, dict[str, Any]] = {}
@@ -203,16 +209,93 @@ def _prepare_documents(rows: list[Any], revision: str) -> tuple[list[Document], 
         aliases = sorted(value["aliases"])
         source = aliases[0]
         title = source[:-4] if source.lower().endswith(".txt") else source
+        source_records = [
+            {"dataset_file": dataset_file, "subset": subset, "record_index": index,
+             "filename": normalize_text(rows[index]["filename"])}
+            for index in value["record_indices"]
+        ]
         documents.append(Document(
             id=value["id"], text=text, source=source, title=title,
             metadata={
                 "dataset": DATASET, "revision": revision,
-                "subset": "legal_documents_v1.1", "source_aliases": aliases,
+                "subset": subset, "subsets": [subset], "source_aliases": aliases,
                 "raw_record_indices": value["record_indices"],
+                "document_type": "case_law" if subset == "carf_2023" else "legal_document",
+                "dataset_file": dataset_file,
+                "dataset_file_url": dataset_file_url,
+                "source_records": source_records,
+                **({"case_year": 2023,
+                    # The upstream file provides filenames and text only. Keep
+                    # the original case-file identifiers; do not guess a ruling
+                    # number or construct an unverified official document URL.
+                    "case_file_ids": sorted(alias.removesuffix(".txt") for alias in aliases),
+                    "origin_repository": "https://acordaos.economia.gov.br/solr/acordaos2/browse/" if dataset_file_url else None}
+                   if subset == "carf_2023" else {}),
             },
         ))
     documents.sort(key=lambda document: document.id)
+    for record in discarded:
+        record.update({"dataset_file": dataset_file, "subset": subset})
     return documents, _report(len(rows), len(documents), discarded)
+
+
+def _merge_document_subsets(groups: Iterable[list[Document]]) -> tuple[list[Document], list[dict[str, Any]]]:
+    """Deduplicate across subsets without losing any source record or alias."""
+    by_text: dict[str, Document] = {}
+    duplicates = []
+    for documents in groups:
+        for document in documents:
+            existing = by_text.get(document.text)
+            if existing is None:
+                by_text[document.text] = document
+                continue
+            aliases = sorted(set(existing.metadata["source_aliases"]) | set(document.metadata["source_aliases"]))
+            subsets = sorted(set(existing.metadata["subsets"]) | set(document.metadata["subsets"]))
+            metadata = {**existing.metadata, "source_aliases": aliases, "subsets": subsets,
+                        "source_records": existing.metadata["source_records"] + document.metadata["source_records"]}
+            for key in ("case_year", "case_file_ids", "origin_repository"):
+                if key in document.metadata:
+                    metadata[key] = document.metadata[key]
+            by_text[document.text] = Document(existing.id, existing.text, existing.source, existing.title, metadata)
+            duplicates.append({"reason": "duplicate_normalized_text_across_subsets",
+                               "source": document.source, "canonical_document_id": existing.id,
+                               "subset": document.metadata["subset"]})
+    return sorted(by_text.values(), key=lambda document: document.id), duplicates
+
+
+def _reference_file_names(value: Any) -> set[str]:
+    """Read explicit upstream file links, without inferring relevance labels."""
+    names: set[str] = set()
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == "file":
+                values = item if isinstance(item, list) else [item]
+                names.update(normalize_text(name) for name in values if isinstance(name, str) and name.strip())
+            else:
+                names.update(_reference_file_names(item))
+    elif isinstance(value, list):
+        for item in value:
+            names.update(_reference_file_names(item))
+    return names
+
+
+def _audit_question_references(questions: list[dict[str, Any]], documents: list[Document]) -> dict[str, Any]:
+    aliases = {alias: document for document in documents for alias in document.metadata["source_aliases"]}
+    linked_cases = 0
+    referenced_files: set[str] = set()
+    matched_carf_cases = 0
+    for question in questions:
+        files = _reference_file_names(question.get("all_formatted_references", question.get("all_formated_references")))
+        linked_cases += bool(files)
+        referenced_files.update(files)
+        matched_carf_cases += any("carf_2023" in aliases[name].metadata["subsets"] for name in files if name in aliases)
+    return {"questions_with_explicit_file_references": linked_cases,
+            "questions_without_explicit_file_references": len(questions) - linked_cases,
+            "distinct_referenced_files": len(referenced_files),
+            "matched_reference_files": len(referenced_files & aliases.keys()),
+            "unmatched_reference_files": sorted(referenced_files - aliases.keys()),
+            "questions_with_explicit_carf_file_references": matched_carf_cases,
+            "policy": "Exact upstream file links only; no inferred CARF relevance or answer-quality labels"}
 
 
 def _answer_text(answer: Any) -> str | None:
@@ -264,11 +347,12 @@ def prepare_dataset(
     data_dir: Path,
     revision: str = DEFAULT_REVISION,
     raw_dir: Path | None = None,
+    include_carf: bool = False,
 ) -> dict[str, Any]:
     """Download/cache the pinned baseline and write separate corpus and cases.
 
     ``raw_dir`` optionally points directly to a directory containing the two
-    upstream JSON files. The default revision verifies published pinned hashes;
+    upstream JSON files (plus CARF when requested). The default revision verifies published pinned hashes;
     custom revisions supplied locally are explicitly marked as local files.
     Existing bytes receive a provenance sidecar; later runs verify its SHA256.
     The default cache is ``data_dir/raw/<revision>``. Prepared artifacts go in
@@ -276,31 +360,51 @@ def prepare_dataset(
     """
     if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", revision):
         raise ValueError("revision must be a pinned 40-character Git commit SHA")
+    if not isinstance(include_carf, bool):
+        raise ValueError("include_carf must be boolean")
     data_dir = Path(data_dir)
     raw_dir = Path(raw_dir) if raw_dir is not None else data_dir / "raw" / revision
     corpus_path, corpus_source = _cached_source(raw_dir, CORPUS_FILENAME, revision)
     questions_path, questions_source = _cached_source(raw_dir, QUESTIONS_FILENAME, revision)
-    documents, document_report = _prepare_documents(_read_json_array(corpus_path), revision)
+    documents, document_report = _prepare_documents(
+        _read_json_array(corpus_path), revision, dataset_file_url=corpus_source.get("url"))
     questions, question_report = _prepare_questions(_read_json_array(questions_path))
     if not documents:
         raise ValueError("The legal-document corpus contains no usable documents")
+    sources = [corpus_source, questions_source]
+    subset_reports = {"legal_documents_v1.1": document_report}
+    if include_carf:
+        carf_path, carf_source = _cached_source(raw_dir, CARF_FILENAME, revision)
+        carf_documents, carf_report = _prepare_documents(
+            _read_json_array(carf_path), revision, subset="carf_2023", dataset_file=CARF_FILENAME,
+            dataset_file_url=carf_source.get("url"))
+        if not carf_documents:
+            raise ValueError("The CARF corpus contains no usable documents")
+        documents, cross_duplicates = _merge_document_subsets([documents, carf_documents])
+        subset_reports["carf_2023"] = carf_report
+        discarded = document_report["discarded_records"] + carf_report["discarded_records"] + cross_duplicates
+        document_report = _report(document_report["input"] + carf_report["input"], len(documents), discarded)
+        sources.append(carf_source)
     prepared_dir = data_dir / "prepared"
     prepared_dir.mkdir(parents=True, exist_ok=True)
     corpus_hash = _write_jsonl(prepared_dir / "corpus.jsonl", (asdict(document) for document in documents))
     questions_hash = _write_jsonl(prepared_dir / "questions.jsonl", questions)
     identity = {
         "schema_version": SCHEMA_VERSION, "dataset": DATASET, "revision": revision,
-        "subset": "legal_documents_v1.1", "normalization": NORMALIZATION,
+        "subset": "legal_documents_v1.1+carf_2023" if include_carf else "legal_documents_v1.1",
+        "normalization": NORMALIZATION,
         "corpus_sha256": corpus_hash,
     }
     manifest = {
         **identity,
         "fingerprint": _sha256(_canonical_json(identity).encode("utf-8")),
         "questions_sha256": questions_hash,
-        "sources": [corpus_source, questions_source],
+        "sources": sources,
         "documents": document_report,
+        "document_subsets": subset_reports,
         "questions": question_report,
-        "excluded_subsets": ["CARF", "expected_answers"],
+        "reference_audit": _audit_question_references(questions, documents),
+        "excluded_subsets": ["expected_answers"] if include_carf else ["CARF", "expected_answers"],
         "reference_field": "answer joined with LF; all original fields preserved",
     }
     _write_json(prepared_dir / "manifest.json", manifest)

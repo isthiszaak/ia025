@@ -13,6 +13,7 @@ class EmbeddingError(RuntimeError):
 class OllamaEmbeddings:
     def __init__(self, config):
         self.config = config
+        self._tokenizer = None
 
     def _request(self, endpoint, payload=None):
         url = self.config.base_url.rstrip("/") + endpoint
@@ -47,6 +48,15 @@ class OllamaEmbeddings:
     def _embed(self, texts):
         if not texts or any(not isinstance(text, str) or not text.strip() for text in texts):
             raise ValueError("Embeddings exigem textos não vazios")
+        if self.config.chunk_unit == "tokens":
+            if self._tokenizer is None:
+                self._tokenizer = self.config.load_tokenizer()
+            for text in texts:
+                count = self._tokenizer.count(text, add_special_tokens=True)
+                if count > self.config.embedding_max_tokens:
+                    raise EmbeddingError(
+                        f"Entrada com {count} tokens (prefixo/título/especiais incluídos) excede "
+                        f"o limite {self.config.embedding_max_tokens}; reduza o trecho/título/pergunta")
         result = self._request("/api/embed", {
             "model": self.config.model, "input": texts, "truncate": False,
         })
