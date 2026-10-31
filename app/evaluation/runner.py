@@ -65,11 +65,17 @@ def run_evaluation(
                     if not isinstance(question, str) or not question.strip():
                         raise ValueError("user_input must be a nonempty string")
                     record["user_input"] = question
+
+                    print("\nObtaining prediction for line", line_number, ":", question)
                     result = run_query(question, llm, prompt_template)
+
+                    print(f"Prediction for line {line_number}: {result}")
                     record.update(asdict(result))
+                    
                     record["status"] = "success"
                     manifest["successful_cases"] += 1
                 except Exception as exc:
+                    print(f"Error processing line {line_number}: {exc}")
                     record.update(
                         status="error",
                         error_type=type(exc).__name__,
