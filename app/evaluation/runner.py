@@ -96,17 +96,17 @@ def run_evaluation(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate offline QA predictions with Ollama")
     parser.add_argument(
-        "--cases", type=Path, default=REPO_ROOT / "evaluation_data" / "cases.jsonl"
+        "--cases", type=Path, default=REPO_ROOT / "app" / "evaluation" / "evaluation_data" / "cases.jsonl"
     )
     parser.add_argument(
-        "--output-dir", type=Path, default=REPO_ROOT / "evaluation_results"
+        "--output-dir", type=Path, default=REPO_ROOT / "app" / "evaluation" / "evaluation_results"
     )
     args = parser.parse_args()
 
     from app.backend.llm import get_llm
 
     run_dir = run_evaluation(args.cases, args.output_dir, get_llm())
-    print(f"Results saved to {run_dir}")
+    print(f"\nResults saved to {run_dir}")
 
 
 if __name__ == "__main__":
