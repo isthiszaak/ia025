@@ -27,6 +27,7 @@ st.set_page_config(
 st.title("🤖 Local LLM Chatbot")
 
 
+
 # Project paths
 APP_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = APP_DIR.parent
@@ -63,9 +64,35 @@ RUNNER_MODULE = "app.evaluation.runner"
 RAGAS_MODULE = "app.evaluation.ragas_adapter"
 
 
+END_TO_END_MODULE = "app.evaluation.end_to_end_runner"
+
+END_TO_END_RESULTS_DIR = (
+    APP_DIR
+    / "evaluation"
+    / "evaluation_results"
+    / "end_to_end"
+)
+
+
+
 # ============================================================
 # HELPER FUNCTIONS
 # ============================================================
+
+def get_end_to_end_runs():
+    if not END_TO_END_RESULTS_DIR.exists():
+        return []
+
+    return sorted(
+        [
+            folder
+            for folder in END_TO_END_RESULTS_DIR.iterdir()
+            if folder.is_dir()
+            and (folder / "comparison.json").exists()
+        ],
+        key=lambda folder: folder.name,
+        reverse=True,
+    )
 
 @st.cache_resource
 def load_llm():
@@ -572,11 +599,12 @@ if "ragas_output_dir" not in st.session_state:
 # TABS
 # ============================================================
 
-chat_tab, editor_tab, dataset_tab, retrieval_tab = st.tabs([
+chat_tab, editor_tab, dataset_tab, retrieval_tab, end_to_end_tab = st.tabs([
     "💬 Chat",
     "⚙️ Prompt Editor",
     "📊 Evaluation Dataset",
-    "🔎 Retrieval Experiments"
+    "🔎 Retrieval Experiments",
+    "🔬 End-to-End RAG Evaluation",
 ])
 
 
@@ -1280,3 +1308,383 @@ with retrieval_tab:
             "No retrieval experiments found. "
             "Run an experiment to see its results here."
         )
+
+
+# ============================================================
+# TAB 5 - END-TO-END RAG EVALUATION
+# ============================================================
+
+with end_to_end_tab:
+
+    st.header("End-to-End RAG Evaluation")
+
+    st.write(
+        "Evaluate the complete RAG pipeline: retrieval, contextual "
+        "generation and answer quality."
+    )
+
+    st.info(
+        "This experiment independently executes five retrieval "
+        "configurations, generates answers using the retrieved contexts "
+        "and evaluates them with five RAGAS metrics."
+    )
+
+    st.subheader("Experiment Dataset")
+
+    if not CASES_PATH.exists():
+        st.error(f"Dataset not found: {CASES_PATH}")
+        e2e_cases = []
+    else:
+        try:
+            e2e_cases = load_cases()
+            validate_retrieval_cases(e2e_cases)
+
+            st.success(
+                f"{len(e2e_cases)} valid questions loaded."
+            )
+        except Exception as exc:
+            st.error(f"Could not load dataset: {exc}")
+            e2e_cases = []
+
+    st.divider()
+
+    st.subheader("Retrieval Parameters")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        e2e_chunk_size = st.selectbox(
+            "Reference chunk size (tokens)",
+            options=CHUNK_SIZES,
+            index=1,
+            key="e2e_chunk_size",
+        )
+
+        e2e_top_k = st.selectbox(
+            "Reference top-k",
+            options=TOP_K_VALUES,
+            index=1,
+            key="e2e_top_k",
+        )
+
+    with col2:
+        e2e_overlap = st.number_input(
+            "Chunk overlap (tokens)",
+            min_value=0,
+            max_value=255,
+            value=50,
+            step=1,
+            key="e2e_overlap",
+        )
+
+        e2e_selection = st.radio(
+            "Corpus selection",
+            options=["baseline", "all"],
+            format_func=lambda value: (
+                "Baseline IRPF corpus"
+                if value == "baseline"
+                else "Entire prepared corpus"
+            ),
+            key="e2e_selection",
+        )
+
+    st.divider()
+
+    st.subheader("Questions to Execute")
+
+    e2e_use_limit = st.checkbox(
+        "Limit the number of questions",
+        value=False,
+        key="e2e_use_limit",
+    )
+
+    e2e_limit = None
+
+    if e2e_use_limit:
+        e2e_limit = st.number_input(
+            "Maximum number of questions",
+            min_value=1,
+            max_value=max(1, len(e2e_cases)),
+            value=min(20, max(1, len(e2e_cases))),
+            step=1,
+            key="e2e_limit",
+        )
+
+    st.divider()
+
+    st.subheader("Index Configuration")
+
+    e2e_build_indexes = st.checkbox(
+        "Build or resume required indexes automatically",
+        value=True,
+        key="e2e_build_indexes",
+    )
+
+    st.divider()
+
+    st.subheader("Experiment Preview")
+
+    e2e_preview = pd.DataFrame([
+        {
+            "Configuration": f"Chunk {size}",
+            "Chunk size": size,
+            "Top-k": e2e_top_k,
+        }
+        for size in CHUNK_SIZES
+    ] + [
+        {
+            "Configuration": f"Top-k {top_k}",
+            "Chunk size": e2e_chunk_size,
+            "Top-k": top_k,
+        }
+        for top_k in TOP_K_VALUES
+        if top_k != e2e_top_k
+    ])
+
+    st.dataframe(
+        e2e_preview,
+        width="stretch",
+        hide_index=True,
+    )
+
+    st.caption(
+        "The reference configuration is shared and executed only once."
+    )
+
+    st.divider()
+
+    st.subheader("Run End-to-End Experiment")
+
+    if st.button(
+        "🚀 Run End-to-End RAG Evaluation",
+        type="primary",
+        width="stretch",
+        disabled=not e2e_cases,
+        key="run_e2e",
+    ):
+
+        END_TO_END_RESULTS_DIR.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        selection = (
+            "all"
+            if e2e_selection == "all"
+            else str(
+                PROJECT_ROOT
+                / "data"
+                / "retrieval"
+                / "baseline_irpf.json"
+            )
+        )
+
+        command = [
+            sys.executable,
+            "-m",
+            END_TO_END_MODULE,
+            "--cases",
+            str(CASES_PATH),
+            "--output-dir",
+            str(END_TO_END_RESULTS_DIR),
+            "--chunk-overlap",
+            str(int(e2e_overlap)),
+            "--fixed-chunk-size",
+            str(int(e2e_chunk_size)),
+            "--fixed-top-k",
+            str(int(e2e_top_k)),
+            "--selection",
+            selection,
+        ]
+
+        if e2e_limit is not None:
+            command.extend([
+                "--limit",
+                str(int(e2e_limit)),
+            ])
+
+        if e2e_build_indexes:
+            command.append("--build-indexes")
+
+        with st.spinner(
+            "Running retrieval, contextual generation and RAGAS. "
+            "This may take some time..."
+        ):
+            try:
+                process = execute_command(command)
+
+                save_execution_result(
+                    "e2e_result",
+                    process,
+                )
+
+                if process.returncode == 0:
+                    try:
+                        output = json.loads(process.stdout)
+
+                        st.session_state.e2e_selected_run = Path(
+                            output["output_dir"]
+                        )
+
+                    except (json.JSONDecodeError, KeyError):
+                        st.warning(
+                            "Execution completed, but the output "
+                            "directory could not be identified."
+                        )
+
+            except Exception as exc:
+                st.session_state.e2e_result = {
+                    "returncode": -1,
+                    "stdout": "",
+                    "stderr": str(exc),
+                }
+
+    if "e2e_result" in st.session_state:
+        display_execution_result(
+            "End-to-End Execution Results",
+            st.session_state.e2e_result,
+        )
+
+    st.divider()
+
+    st.header("Previous End-to-End Experiments")
+
+    e2e_runs = get_end_to_end_runs()
+
+    if not e2e_runs:
+        st.info("No end-to-end experiments found.")
+    else:
+        selected_e2e_run = st.selectbox(
+            "Select an experiment:",
+            options=e2e_runs,
+            format_func=lambda folder: folder.name,
+            key="e2e_run_selector",
+        )
+
+        comparison_path = selected_e2e_run / "comparison.json"
+
+        if comparison_path.exists():
+            comparison = load_json_file(comparison_path)
+
+            st.subheader("Configuration Comparison")
+
+            comparison_rows = []
+
+            for configuration in comparison.get(
+                "configurations", []
+            ):
+                row = {
+                    "Configuration": configuration["setting"],
+                    "Chunk size": configuration["chunk_size"],
+                    "Top-k": configuration["top_k"],
+                }
+
+                for metric, values in configuration["metrics"].items():
+                    row[metric] = values.get("mean")
+
+                comparison_rows.append(row)
+
+            comparison_df = pd.DataFrame(comparison_rows)
+
+            st.dataframe(
+                comparison_df,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    metric: st.column_config.NumberColumn(
+                        metric,
+                        format="%.4f",
+                    )
+                    for metric in [
+                        "answer_relevancy",
+                        "answer_correctness",
+                        "faithfulness",
+                        "context_precision",
+                        "context_recall",
+                    ]
+                },
+            )
+
+            st.caption(
+                "Values represent the mean score across valid cases. "
+                "Higher values indicate better results."
+            )
+
+            st.divider()
+
+            st.subheader("Detailed Configuration Results")
+
+            selected_setting = st.selectbox(
+                "Select a configuration:",
+                options=[
+                    item["setting"]
+                    for item in comparison.get("configurations", [])
+                ],
+                key="e2e_setting_selector",
+            )
+
+            setting_dir = selected_e2e_run / selected_setting
+
+            ragas_summary_path = (
+                setting_dir / "ragas" / "summary.json"
+            )
+
+            if ragas_summary_path.exists():
+                summary = load_json_file(ragas_summary_path)
+                display_ragas_summary(summary)
+
+            predictions_path = setting_dir / "predictions.jsonl"
+
+            if predictions_path.exists():
+                predictions = load_jsonl_file(predictions_path)
+
+                st.subheader("Generated Answers")
+
+                for prediction in predictions:
+                    with st.expander(
+                        f"{prediction.get('case_id')} — "
+                        f"{str(prediction.get('user_input', ''))[:90]}"
+                    ):
+                        st.markdown("**Question**")
+                        st.write(prediction.get("user_input"))
+
+                        st.markdown("**Retrieved Contexts**")
+                        for index, context in enumerate(
+                            prediction.get("retrieved_contexts", []),
+                            start=1,
+                        ):
+                            st.markdown(f"Context {index}")
+                            st.write(context)
+
+                        st.markdown("**Generated Answer**")
+                        st.write(
+                            prediction.get(
+                                "response",
+                                "No answer generated.",
+                            )
+                        )
+
+                        st.write(
+                            "Retrieval status: "
+                            f"{prediction.get('retrieval_status')}"
+                        )
+
+                        st.write(
+                            "Generation status: "
+                            f"{prediction.get('generation_status')}"
+                        )
+
+                        if prediction.get("error"):
+                            st.error(prediction["error"])
+
+            scores_path = setting_dir / "ragas" / "scores.jsonl"
+
+            if scores_path.exists():
+                with st.expander("Per-case RAGAS scores"):
+                    st.dataframe(
+                        pd.DataFrame(
+                            load_jsonl_file(scores_path)
+                        ),
+                        width="stretch",
+                        hide_index=True,
+                    )
