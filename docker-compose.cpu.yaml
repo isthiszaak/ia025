@@ -9,8 +9,6 @@ services:
       - ollama_data:/root/.ollama
     env_file:
       - .env
-    environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
     entrypoint:
       - /bin/sh
       - -c
@@ -23,7 +21,10 @@ services:
         echo "Pulling generation model..."
         ollama pull "$$OLLAMA_MODEL"
 
-        echo "Pulling embedding model..."
+        echo "Pulling evaluation embedding model..."
+        ollama pull "$${EVAL_EMBEDDING_MODEL:-nomic-embed-text}"
+
+        echo "Pulling retrieval embedding model..."
         ollama pull "$${RETRIEVAL_EMBEDDING_MODEL:-embeddinggemma:300m}"
 
         echo "Ollama models are ready."
@@ -41,6 +42,10 @@ services:
       - ./frontend:/app
     env_file:
       - .env
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      EVAL_LLM_BASE_URL: http://ollama:11434/v1
+      EVAL_EMBEDDING_BASE_URL: http://ollama:11434/v1
     depends_on:
       - ollama
 

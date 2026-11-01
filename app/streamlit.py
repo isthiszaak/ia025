@@ -59,6 +59,8 @@ RETRIEVAL_MODULE = "app.retrieval"
 # Retrieval experiment options supported by experiments.py
 CHUNK_SIZES = [256, 512, 1024]
 TOP_K_VALUES = [1, 3, 5]
+RUNNER_MODULE = "app.evaluation.runner"
+RAGAS_MODULE = "app.evaluation.ragas_adapter"
 
 
 # ============================================================
@@ -194,6 +196,7 @@ def get_evaluation_runs():
             folder
             for folder in RESULTS_DIR.iterdir()
             if folder.is_dir()
+            and (folder / "predictions.jsonl").exists()
         ],
         key=lambda folder: folder.name,
         reverse=True
@@ -467,6 +470,80 @@ def display_retrieval_run(run_dir):
                 )
 
                 st.json(chunk)
+def load_ragas_summary(summary_path):
+    """Load RAGAS summary JSON."""
+
+    with open(summary_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def display_ragas_summary(summary):
+    """Display RAGAS evaluation summary."""
+
+    st.divider()
+    st.header("📊 RAGAS Evaluation Summary")
+
+    # General information
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.metric(
+            "Total Cases",
+            summary.get("total_cases", 0)
+        )
+
+    with col2:
+        st.metric(
+            "Standard Deviation",
+            summary.get("standard_deviation", "N/A")
+        )
+
+    # Metrics table
+    metrics = summary.get("metrics", {})
+
+    rows = []
+
+    for metric_name, values in metrics.items():
+
+        mean = values.get("mean")
+        stddev = values.get("stddev")
+
+        rows.append({
+            "Metric": metric_name,
+            "Mean": mean,
+            "Std Dev": stddev,
+            "Valid": values.get("valid_count", 0),
+            "Failures": values.get("failure_count", 0),
+            "Not Applicable": values.get("not_applicable_count", 0),
+            "Skipped": values.get("skipped_count", 0)
+        })
+
+    metrics_df = pd.DataFrame(rows)
+
+    st.dataframe(
+        metrics_df,
+        width='stretch',
+        hide_index=True,
+        column_config={
+            "Mean": st.column_config.NumberColumn(
+                "Mean",
+                format="%.4f"
+            ),
+            "Std Dev": st.column_config.NumberColumn(
+                "Std Dev",
+                format="%.4f"
+            )
+        }
+    )
+
+    # Detailed metric status
+    with st.expander("Metric details"):
+
+        for metric_name, values in metrics.items():
+
+            st.markdown(f"**{metric_name}**")
+
+            st.json(values)
 
 
 # ============================================================
@@ -483,6 +560,12 @@ if "prompt_template_text" not in st.session_state:
 
 if "evaluation_df" not in st.session_state:
     st.session_state.evaluation_df = None
+
+if "ragas_summary" not in st.session_state:
+    st.session_state.ragas_summary = None
+
+if "ragas_output_dir" not in st.session_state:
+    st.session_state.ragas_output_dir = None
 
 
 # ============================================================
@@ -534,7 +617,6 @@ with chat_tab:
         with st.chat_message("assistant"):
 
             try:
-
                 chat_history = "\n".join(
                     [
                         f"{message['role']}: {message['content']}"
@@ -741,26 +823,30 @@ with dataset_tab:
 
 
     # --------------------------------------------------------
-    # EXECUTION BUTTONS
+    # RUN RAGAS
     # --------------------------------------------------------
 
     st.subheader("Run Evaluation")
 
     if st.button(
         "📊 Run RAGAS",
-        width='stretch',
-        disabled=predictions_path is None
-        or not predictions_path.exists()
+        width="stretch",
+        disabled=(
+            predictions_path is None
+            or not predictions_path.exists()
+        )
     ):
 
         timestamp = datetime.now(timezone.utc).strftime(
-            "%Y%m%dT%H%M%SZ"
+            "%Y%m%dT%H%M%S%fZ"
         )
 
         ragas_output_dir = (
             selected_run_dir
             / f"ragas_{timestamp}"
         )
+
+        summary_path = ragas_output_dir / "summary.json"
 
         with st.spinner(
             f"Running RAGAS on {selected_run_dir.name}..."
@@ -786,6 +872,31 @@ with dataset_tab:
                     selected_run_dir.name
                 )
 
+                st.session_state.ragas_output_dir = str(
+                    ragas_output_dir
+                )
+
+                if process.returncode == 0:
+
+                    if summary_path.exists():
+
+                        st.session_state.ragas_summary = (
+                            load_ragas_summary(summary_path)
+                        )
+
+                    else:
+
+                        st.session_state.ragas_summary = None
+
+                        st.warning(
+                            f"RAGAS completed, but summary.json "
+                            f"was not found at: {summary_path}"
+                        )
+
+                else:
+
+                    st.session_state.ragas_summary = None
+
             except Exception as e:
 
                 st.session_state.ragas_result = {
@@ -793,6 +904,8 @@ with dataset_tab:
                     "stdout": "",
                     "stderr": str(e)
                 }
+
+                st.session_state.ragas_summary = None
 
 
     # --------------------------------------------------------
@@ -815,10 +928,23 @@ with dataset_tab:
             + st.session_state.get("ragas_selected_run", "Unknown")
         )
 
+        if st.session_state.ragas_output_dir:
+            st.caption(
+                f"Output directory: {st.session_state.ragas_output_dir}"
+            )
+
         display_execution_result(
             "RAGAS Output",
             st.session_state.ragas_result
         )
+        
+    # Display the summary whenever it is available.
+    if st.session_state.ragas_summary is not None:
+
+        display_ragas_summary(
+            st.session_state.ragas_summary
+        )
+
 
 
 # ============================================================
@@ -1014,35 +1140,19 @@ with retrieval_tab:
 
     preview_df = pd.DataFrame([
         {
-            "Configuration": "Chunk 256",
-            "Chunk size": 256,
+            "Configuration": f"Chunk {size}",
+            "Chunk size": size,
             "Top-k": fixed_top_k
-        },
-        {
-            "Configuration": "Chunk 512",
-            "Chunk size": 512,
-            "Top-k": fixed_top_k
-        },
-        {
-            "Configuration": "Chunk 1024",
-            "Chunk size": 1024,
-            "Top-k": fixed_top_k
-        },
-        {
-            "Configuration": f"Top-k 1",
-            "Chunk size": fixed_chunk_size,
-            "Top-k": 1
-        },
-        {
-            "Configuration": f"Top-k 3",
-            "Chunk size": fixed_chunk_size,
-            "Top-k": 3
-        },
-        {
-            "Configuration": f"Top-k 5",
-            "Chunk size": fixed_chunk_size,
-            "Top-k": 5
         }
+        for size in CHUNK_SIZES
+    ] + [
+        {
+            "Configuration": f"Top-k {top_k}",
+            "Chunk size": fixed_chunk_size,
+            "Top-k": top_k
+        }
+        for top_k in TOP_K_VALUES
+        if top_k != fixed_top_k
     ])
 
     # The reference combination appears in both comparison groups.
