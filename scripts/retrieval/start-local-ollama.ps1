@@ -78,7 +78,7 @@ try {
             }
         }
     }
-    Write-Output "RETRIEVAL_OLLAMA_BASE_URL=$baseUrl"
+    Write-Output "OLLAMA_BASE_URL=$baseUrl"
 } finally {
     foreach ($name in $previousEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name], 'Process') }
 }

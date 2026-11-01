@@ -10,5 +10,5 @@ def get_llm():
         base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
         temperature=float(os.getenv("OLLAMA_TEMPERATURE", 0.1))
     )
-
+    
     return ollama

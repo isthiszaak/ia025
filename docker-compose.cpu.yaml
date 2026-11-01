@@ -9,7 +9,25 @@ services:
       - ollama_data:/root/.ollama
     env_file:
       - .env
-    entrypoint: [ "/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull $$OLLAMA_MODEL && wait" ]
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        ollama serve &
+        until ollama list >/dev/null 2>&1; do
+          sleep 1
+        done
+
+        echo "Pulling generation model..."
+        ollama pull "$$OLLAMA_MODEL"
+
+        echo "Pulling embedding model..."
+        ollama pull "$${RETRIEVAL_EMBEDDING_MODEL:-embeddinggemma:300m}"
+
+        echo "Ollama models are ready."
+        wait
 
   streamlit:
     build:

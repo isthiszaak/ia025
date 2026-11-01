@@ -1,3 +1,13 @@
+# Streamlit
+.streamlit/secrets.toml
+
+git_key
+git_key.pub
+
+# Offline evaluation outputs
+evaluation_results/
+# evaluation_data/
+
 # Byte-compiled / optimized / DLL files
 __pycache__
 __pycache__/

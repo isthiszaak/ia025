@@ -87,7 +87,7 @@ $python = '.\.venv-retrieval\Scripts\python.exe'
 & $python scripts/retrieval/validate_tokens.py --data-dir data/retrieval
 
 # Ollama deve estar ativo neste endpoint e ter o modelo instalado.
-$env:RETRIEVAL_OLLAMA_BASE_URL = 'http://localhost:11435'
+$env:OLLAMA_BASE_URL = 'http://localhost:11435'
 # No Ollama do Compose já iniciado:
 # docker exec ia025_ollama ollama pull embeddinggemma:300m
 # Alternativa nativa: scripts/retrieval/start-local-ollama.ps1 -OllamaPath <ollama.exe> -PullModel

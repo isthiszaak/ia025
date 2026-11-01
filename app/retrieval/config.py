@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class RetrievalConfig:
     data_dir: Path = ROOT / "data/retrieval"
     index_dir: Path = ROOT / "data/retrieval/chroma"
-    corpus_selection: Path | None = ROOT / "retrieval_data/baseline_irpf.json"
+    corpus_selection: Path | None = ROOT / "data/retrieval/baseline_irpf.json"
     base_url: str = "http://localhost:11435"
     model: str = "embeddinggemma:300m"
     dimension: int = 768
@@ -53,13 +53,13 @@ class RetrievalConfig:
                 raise ValueError("Tokenizer exige identificação e revisão Git SHA de 40 caracteres")
         parsed = urlparse(self.base_url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.path not in {"", "/"}:
-            raise ValueError("RETRIEVAL_OLLAMA_BASE_URL deve ser a raiz HTTP do Ollama, sem /v1")
+            raise ValueError("OLLAMA_BASE_URL deve ser a raiz HTTP do Ollama, sem /v1")
 
     @classmethod
     def from_env(cls):
         from dotenv import load_dotenv
         load_dotenv(ROOT / ".env", override=False)
-        selection = os.getenv("RETRIEVAL_CORPUS_SELECTION", str(ROOT / "retrieval_data/baseline_irpf.json"))
+        selection = os.getenv("RETRIEVAL_CORPUS_SELECTION", str(ROOT / "data/retrieval/baseline_irpf.json"))
         # Old .env files named character sizes without a unit. Never silently
         # reinterpret an existing configuration as token counts.
         legacy = "RETRIEVAL_CHUNK_SIZE" in os.environ or "RETRIEVAL_CHUNK_OVERLAP" in os.environ
@@ -71,7 +71,7 @@ class RetrievalConfig:
             data_dir=local_path(os.getenv("RETRIEVAL_DATA_DIR", str(ROOT / "data/retrieval"))),
             index_dir=local_path(os.getenv("RETRIEVAL_INDEX_DIR", str(ROOT / "data/retrieval/chroma"))),
             corpus_selection=None if selection.lower() == "all" else local_path(selection),
-            base_url=os.getenv("RETRIEVAL_OLLAMA_BASE_URL", "http://localhost:11435"),
+            base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11435"),
             model=os.getenv("RETRIEVAL_EMBEDDING_MODEL", "embeddinggemma:300m"),
             dimension=int(os.getenv("RETRIEVAL_EMBEDDING_DIMENSION", "768")),
             profile=os.getenv("RETRIEVAL_EMBEDDING_PROFILE", "embeddinggemma"),
