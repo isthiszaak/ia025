@@ -31,15 +31,20 @@ services:
         wait
 
   streamlit:
+    user: "${HOST_UID}:${HOST_GID}"
     build:
-      context: ./frontend
+      context: ./app
       dockerfile: Dockerfile
+      args:
+        UID: ${HOST_UID}
+        GID: ${HOST_GID}
     container_name: ia025_app
     restart: unless-stopped
     ports:
       - "8501:8501"
     volumes:
-      - ./frontend:/app
+      - ./app:/app
+      - ./data:/data
     env_file:
       - .env
     environment:

@@ -22,23 +22,9 @@ from app.evaluation.ragas_adapter import (
 from importlib.metadata import version
 from langchain_core.prompts import PromptTemplate
 
+from app.backend.prompts import RAG_PROMPT
 
 ROOT = Path(__file__).resolve().parents[2]
-
-RAG_PROMPT = """You are a helpful assistant.
-Answer the question using the provided context.
-
-If the context does not contain enough information to answer,
-clearly state that the available information is insufficient.
-Do not invent facts.
-
-Retrieved context:
-{context}
-
-User question:
-{user_input}
-
-Answer:"""
 
 
 def load_cases(path):

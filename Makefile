@@ -1,5 +1,7 @@
 .PHONY: help up down rebuild logs clean-all \
-        retrieval-prepare retrieval-build retrieval-setup retrieval-compare
+        retrieval-prepare retrieval-build retrieval-setup retrieval-compare \
+        clean-retrieval-experiments clean-evaluation-results \
+        clean-end-to-end-results clean-all-experiments
 
 # ============================================================
 # CONFIGURATION
@@ -28,6 +30,9 @@ else
     COMPOSE_FLAGS := -f docker-compose.cpu.yaml
 endif
 
+export HOST_UID := $(shell id -u)
+export HOST_GID := $(shell id -g)
+
 
 # ============================================================
 # HELP
@@ -52,7 +57,11 @@ help:
 	@echo "Optional retrieval parameters:"
 	@echo "  RETRIEVAL_SELECTION, RETRIEVAL_CHUNK_SIZE,"
 	@echo "  RETRIEVAL_CHUNK_OVERLAP, RETRIEVAL_TOP_K"
-
+	@echo "Cleanup:"
+	@echo "  make clean-retrieval-experiments  Remove retrieval experiment results"
+	@echo "  make clean-evaluation-results    Remove standalone evaluation results"
+	@echo "  make clean-end-to-end-results    Remove end-to-end evaluation results"
+	@echo "  make clean-all-experiments           Remove all experiment results"
 
 # ============================================================
 # DOCKER
@@ -151,3 +160,38 @@ retrieval-ollama:
 	done; \
 	echo "ERROR: Ollama model was not available after 6 minutes."; \
 	exit 1
+
+# ============================================================
+# EXPERIMENT CLEANUP
+# ============================================================
+
+RETRIEVAL_OUTPUT ?= data/retrieval/experiments
+EVALUATION_OUTPUT ?= app/evaluation/evaluation_results
+END_TO_END_OUTPUT ?= app/evaluation/evaluation_results/end_to_end
+
+# Remove retrieval experiment results
+clean-retrieval-experiments:
+	@echo "Removing retrieval experiment results..."
+	rm -rf "$(RETRIEVAL_OUTPUT)"
+	@mkdir -p "$(RETRIEVAL_OUTPUT)"
+	@echo "Retrieval experiments cleaned."
+
+# Remove standalone evaluation results
+clean-evaluation-results:
+	@echo "Removing standalone evaluation results..."
+	@find "$(EVALUATION_OUTPUT)" -mindepth 1 -maxdepth 1 \
+		! -name "end_to_end" -exec rm -rf {} +
+	@echo "Standalone evaluation results cleaned."
+
+# Remove end-to-end evaluation results
+clean-end-to-end-results:
+	@echo "Removing end-to-end evaluation results..."
+	rm -rf "$(END_TO_END_OUTPUT)"
+	@mkdir -p "$(END_TO_END_OUTPUT)"
+	@echo "End-to-end evaluation results cleaned."
+
+# Remove all experiment and evaluation results
+clean-all-experiments: clean-retrieval-experiments \
+                   clean-evaluation-results \
+                   clean-end-to-end-results
+	@echo "All experiment results have been cleaned."

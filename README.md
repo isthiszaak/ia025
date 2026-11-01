@@ -1,605 +1,615 @@
 # Local RAG Chatbot
 
-A fully local, privacy-first chatbot built with **Streamlit** and **Ollama**. This project sets up a local Large Language Model (LLM) and a frontend chat interface using Docker. It includes automatic hardware detection to seamlessly switch between CPU-only mode and NVIDIA GPU acceleration.
+A fully local, privacy-first RAG chatbot built with **Streamlit**, **Ollama**, and **ChromaDB**. The project provides a local LLM interface, document retrieval, and evaluation workflows for measuring generation, retrieval, and end-to-end RAG performance.
+
+The application runs with Docker Compose and supports automatic hardware detection through the Makefile, switching between CPU-only and NVIDIA GPU configurations.
 
 ## 📂 Project Structure
 
 ```text
 .
-├── Makefile                  # Automation script for running and managing containers
-├── README.md                 # Project documentation
-├── .env                      # Environment variables (not included in version control)
-├── .env.example              # Example environment variables file
-├── docker-compose.cpu.yaml   # Base Docker Compose configuration (CPU-only)
-├── docker-compose.gpu.yaml   # GPU overrides for NVIDIA acceleration
-├── pyproject.toml            # Python project metadata and dependencies (if applicable)
+├── Makefile
+├── README.md
+├── pyproject.toml
+├── docker-compose.cpu.yaml
+├── docker-compose.gpu.yaml
+│
 ├── app/
-│   ├── app.py                # Streamlit chat interface
-│   ├── backend/              # LLM configuration and prompts
-│   ├── retrieval/            # Dataset preparation, embeddings, and retrieval
-│   ├── Dockerfile            # Container definition for the Streamlit app
-│   └── requirements.txt      # Chatbot dependencies
-├── retrieval_data/           # Corpus selection and retrieval smoke questions
-├── scripts/retrieval/        # PowerShell setup, build, query, and test commands
-└── tests/                    # Retrieval tests
-
+│   ├── Dockerfile
+│   ├── streamlit.py                 # Main Streamlit application
+│   ├── requirements.txt
+│   │
+│   ├── backend/
+│   │   ├── llm.py                   # LLM configuration and integration
+│   │   ├── pipeline.py              # Conversational generation pipeline
+│   │   └── prompts.py               # Prompt templates
+│   │
+│   ├── retrieval/
+│   │   ├── __init__.py
+│   │   ├── __main__.py              # Retrieval CLI entry point
+│   │   ├── config.py                # Retrieval configuration
+│   │   ├── data.py                  # Corpus preparation and data loading
+│   │   ├── chunking.py              # Document chunking
+│   │   ├── tokenizer.py             # Tokenizer integration
+│   │   ├── embeddings.py            # Embedding generation
+│   │   ├── index.py                 # ChromaDB index management
+│   │   ├── experiments.py           # Retrieval experiments
+│   │   └── requirements.txt
+│   │
+│   └── evaluation/
+│       ├── runner.py                # Standalone generation evaluation
+│       ├── end_to_end_runner.py     # End-to-end RAG evaluation
+│       ├── ragas_adapter.py         # RAGAS scoring
+│       ├── requirements.txt
+│       ├── evaluation_data/
+│       │   └── cases.jsonl         # Evaluation dataset
+│       └── evaluation_results/      # Generated evaluation runs
+│
+├── data/
+│   └── retrieval/
+│       ├── baseline_irpf.json       # Baseline corpus selection
+│       ├── smoke_questions.jsonl    # Retrieval smoke-test questions
+│       ├── raw/                     # Downloaded source datasets
+│       ├── prepared/                # Processed corpus and questions
+│       ├── tokenizer/               # Downloaded tokenizer files
+│       ├── models/                  # Local model-related artifacts
+│       ├── chroma/                  # Persistent ChromaDB indexes
+│       └── experiments/             # Retrieval experiment results
+│
+├── docs/
+│
+├── scripts/
+│   └── retrieval/
+│       ├── build.ps1
+│       ├── compare.ps1
+│       ├── query.ps1
+│       ├── setup.ps1
+│       ├── start-local-ollama.ps1
+│       ├── test.ps1
+│       └── validate_tokens.py
+│
+└── tests/
 ```
+
+### Main Components
+
+| Directory | Responsibility |
+| --- | --- |
+| `app/backend/` | LLM integration, conversational pipeline, and prompt management. |
+| `app/retrieval/` | Corpus preparation, chunking, embeddings, vector indexing, and retrieval experiments. |
+| `app/evaluation/` | Standalone generation evaluation, end-to-end RAG evaluation, and RAGAS scoring. |
+| `app/evaluation/evaluation_data/` | Evaluation questions and reference answers. |
+| `app/evaluation/evaluation_results/` | Generated predictions, scores, manifests, and evaluation summaries. |
+| `data/retrieval/` | Retrieval datasets, processed corpus, tokenizer files, ChromaDB indexes, and experiment outputs. |
+| `docs/` | Technical documentation and validation reports. |
+| `scripts/retrieval/` | Auxiliary PowerShell and Python scripts for retrieval workflows. |
+| `tests/` | Automated tests for retrieval and evaluation components. |
+
+**Generated artifacts:** ChromaDB indexes, prepared datasets, downloaded tokenizer files, and evaluation results are generated locally. They should not be treated as source code or required to be committed to version control unless explicitly needed.
 
 ## ⚙️ Prerequisites
 
-Before you begin, ensure you have the following installed on your host machine:
-
-* **Docker** & **Docker Compose**
-* **Make** (Standard on Linux/macOS; available via WSL on Windows)
-* *(Optional but Recommended)* **NVIDIA Container Toolkit**: Required if you want to run the models using a dedicated NVIDIA GPU.
+- Docker and Docker Compose
+- Make
+- Python 3.10+ for local development and CLI execution
+- NVIDIA Container Toolkit (optional, for GPU acceleration)
 
 ## 🚀 Quick Start
 
-**1. Clone the Repository**
+### 1. Clone the repository
 
 ```bash
 git clone git@github.com:isthiszaak/ia025.git
 cd ia025
 ```
 
-**2. Set Up Environment Variables (Ollama Setup)**
-The project uses an environment file to determine which LLM to run. Copy the provided example file:
+### 2. Configure environment variables
+
+Create your local environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-Open the `.env` file in your editor and define your desired model. For example:
+Configure the models and endpoints according to your environment.
+
+Example:
 
 ```env
+# Main chatbot
 OLLAMA_MODEL=qwen2.5:1.5b
+OLLAMA_BASE_URL=http://ollama:11434
+
+# Retrieval
+RETRIEVAL_EMBEDDING_MODEL=embeddinggemma:300m
+RETRIEVAL_EMBEDDING_DIMENSION=768
+RETRIEVAL_EMBEDDING_PROFILE=embeddinggemma
+RETRIEVAL_CHUNK_UNIT=tokens
+RETRIEVAL_CHUNK_SIZE=512
+RETRIEVAL_CHUNK_OVERLAP=50
+RETRIEVAL_TOP_K=5
+RETRIEVAL_BATCH_SIZE=32
+RETRIEVAL_CORPUS_SELECTION=data/retrieval/baseline_irpf.json
+
+# RAGAS evaluation
+EVAL_LLM_MODEL=qwen2.5:1.5b
+EVAL_LLM_BASE_URL=http://ollama:11434/v1
+EVAL_LLM_TEMPERATURE=0
+EVAL_LLM_MAX_TOKENS=2048
+
+EVAL_EMBEDDING_MODEL=nomic-embed-text
+EVAL_EMBEDDING_BASE_URL=http://ollama:11434/v1
+EVAL_TIMEOUT_SECONDS=600
 ```
 
-*(The Ollama container is configured to read this variable and automatically pull the model when it starts).*
+**Important:** The Ollama endpoints depend on where the application runs:
 
-**3. Start the Containers**
-The project includes a smart Makefile that automatically detects if you have an NVIDIA GPU available and routes to the correct Docker Compose configuration.
+| Execution environment                   | Ollama endpoint          |
+| --------------------------------------- | ------------------------ |
+| Inside Docker Compose network           | `http://ollama:11434`    |
+| Host machine using Compose port mapping | `http://localhost:11435` |
+| Native Ollama installation              | `http://localhost:11434` |
+
+The RAGAS endpoints use Ollama's OpenAI-compatible API and therefore include `/v1`. The main chatbot and retrieval configuration use the Ollama root URL, without `/v1`.
+
+The model variables are independent:
+
+- `OLLAMA_MODEL`: chatbot generation model.
+- `RETRIEVAL_EMBEDDING_MODEL`: document embedding model.
+- `EVAL_LLM_MODEL`: model used by RAGAS.
+- `EVAL_EMBEDDING_MODEL`: embedding model used by RAGAS.
+
+Ensure all required models are available in the Ollama instance used by the application.
+
+### 3. Start the application
 
 ```bash
 make up
 ```
 
-*Note: Once the containers start, Ollama will automatically begin downloading the model specified in your `.env` file. This can take a few minutes depending on your internet connection.*
+The Makefile detects available NVIDIA hardware and selects the appropriate Docker Compose configuration.
 
-**4. Access the Chat UI**
-Once the model is downloaded, open your browser and navigate to:
+### 4. Access the application
 
-* **http://localhost:8501**
+Open:
 
-## 🛠️ Available Make Commands
+```text
+http://localhost:8501
+```
 
-You can manage the entire lifecycle of the application using the provided `Makefile`.
+## 🛠️ Makefile Commands
+
+The Makefile provides shortcuts for managing Docker containers and executing the retrieval pipeline. It also automatically detects NVIDIA GPU availability and selects the appropriate Docker Compose configuration.
+
+### Hardware Detection
+
+Before executing Docker commands, the Makefile checks whether `nvidia-smi` is available:
+
+- **GPU detected:** uses `docker-compose.gpu.yaml`.
+- **No GPU detected:** uses `docker-compose.cpu.yaml`.
+
+No manual configuration is required to select the hardware profile.
+
+### Docker Commands
 
 | Command | Description |
 | --- | --- |
-| `make up` | Automatically detects hardware (CPU/GPU) and starts the Streamlit and Ollama containers in the background. |
-| `make down` | Stops and removes the containers and networks safely. |
-| `make rebuild` | Stops containers, removes orphans, forces a rebuild of the Docker images, and restarts the environment. |
-| `make logs` | Tails the live logs for both Streamlit and Ollama services. |
-| `make clean-all` | **Deep Clean:** Stops all containers and completely removes Docker volumes (deletes downloaded models and databases). |
+| `make up` | Starts all containers in detached mode. |
+| `make down` | Stops containers and removes associated networks. |
+| `make rebuild` | Rebuilds Docker images and starts the containers. |
+| `make logs` | Follows logs from all services. |
+| `make clean-all` | Stops containers and removes orphans, networks, and volumes. |
 
-## Data Preparation & Retrieval
+**Note:** `make clean-all` also removes persistent Docker volumes, including locally stored models and databases.
 
-`app.retrieval` provides dataset preparation, local Ollama embeddings, and a
-persistent Chroma index. The Python interface and CLI expose retrieved text
-and source metadata. The Streamlit chatbot requires a separate integration to
-consume these contexts.
+### Retrieval Pipeline Commands
 
-### Dataset and initial corpus
+The Makefile provides commands to prepare the retrieval corpus, build ChromaDB indexes, and execute retrieval experiments.
 
-The source is [unicamp-dl/BR-TaxQA-R](https://huggingface.co/datasets/unicamp-dl/BR-TaxQA-R),
-v1.1 JSON files at revision `9f0f4263928c6152a40f888da3e63375a24bb0f3`,
-licensed under [CC BY 4.0](https://huggingface.co/datasets/unicamp-dl/BR-TaxQA-R/blob/main/LICENSE).
-The loader verifies the pinned checksums and preserves provenance in a local
-manifest. It normalizes Unicode/line endings and removes exact normalized-text
-duplicates while retaining all source filenames as aliases.
-
-- `referred_legal_documents_QA_2024_v1.1.json`: 478 records, yielding 461 unique
-  legal documents and 17 duplicate records.
-- `questions_QA_2024_v1.1.json`: 715 questions, answers, and original references.
-  These are prepared separately; expected answers are not indexed.
-- `acordaos_CARF_2023.json`: 7,204 case-law documents, verified in the same
-  pinned revision. Opt in with `prepare --include-carf`; the combined corpus has
-  7,665 unique documents. This file has no QA pairs, and the 715 questions have
-  no explicit CARF file references. No CARF relevance labels are inferred.
-- `data/retrieval/baseline_irpf.json`: the default index selects three documents:
-  Lei nº 9.250/1995, IN RFB nº 2.178, and Lei nº 7.713. The historical character
-  configuration (1,200/200) produced 142 chunks; token configurations differ.
-  Use `--selection all` to build a separate index for all 461 documents.
-
-The initial selection is a small integration baseline with limited subject
-coverage. Legal texts reflect the dataset's 2024 source material and can include
-historical redactions. Smoke questions have no invented relevance labels.
-
-| Setting | Default |
+| Command | Description |
 | --- | --- |
-| Embedding model | `embeddinggemma:300m`, 768 dimensions |
-| CLI chunk size / overlap | 512 / 50 tokens; planned sizes: 256, 512, 1024 |
-| Tokenizer | EmbeddingGemma tokenizer, `tokenizers==0.22.2`, pinned revision below |
-| Distance | Cosine distance (`1 - cosine_similarity`); lower is closer |
-| Top-k / embedding batch size | 5 / 32 |
-| Data / index | `data/retrieval/` / `data/retrieval/chroma/` |
+| `make retrieval-prepare` | Prepares the retrieval corpus. |
+| `make retrieval-build` | Ensures Ollama is running and the embedding model is available, then builds the ChromaDB index. |
+| `make retrieval-setup` | Executes corpus preparation and index building. |
+| `make retrieval-compare` | Runs the retrieval comparison experiments using the configured evaluation cases. |
 
-Token chunking uses the actual EmbeddingGemma vocabulary from
-[`onnx-community/embeddinggemma-300m-ONNX`](https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/tree/8cd82455fa7fae53af154775fd1494f5577ef4b0),
-revision `8cd82455fa7fae53af154775fd1494f5577ef4b0`, with `tokenizer.json` SHA256
-`4dda02faaf32bc91031dc8c88457ac272b00c1016cc679757d1c441b248b9c47`.
-Only the tokenizer is downloaded, not ONNX model weights; embeddings remain in
-Ollama. Token counts are never estimated from character counts.
+### Retrieval Configuration
 
-Chunks are exact slices of the normalized document with stable IDs, source
-aliases, character offsets, original-document token offsets and independently
-checked token counts. Unicode byte-fallback boundaries retain complete
-characters; rare overlap adjustments are recorded as `actual_overlap_tokens`.
-The configurable 50-token overlap is an implementation choice and stays constant
-across comparisons, always below 256. Prefixes, titles and special tokens do not
-count toward chunk size but do count toward the 2,048-token embedding input
-limit. Oversized complete inputs fail before HTTP; Ollama also receives
-[`truncate:false`](https://docs.ollama.com/api/embed). No text is silently cut.
+The following variables can be overridden directly when running Make commands:
 
-### Setup and commands on Windows
+| Variable | Default | Description |
+| --- | --- | --- |
+| `RETRIEVAL_EMBEDDING_MODEL` | `embeddinggemma:300m` | Ollama embedding model used for retrieval. |
+| `RETRIEVAL_SELECTION` | `data/retrieval/baseline_irpf.json` | Corpus selection used to build and evaluate indexes. |
+| `RETRIEVAL_CHUNK_SIZE` | `512` | Number of tokens per document chunk. |
+| `RETRIEVAL_CHUNK_OVERLAP` | `50` | Overlap between consecutive chunks. |
+| `RETRIEVAL_CHUNK_UNIT` | `tokens` | Unit used for document chunking. |
+| `RETRIEVAL_TOP_K` | `3` | Number of retrieved chunks per query. |
+| `RETRIEVAL_CASES` | `app/evaluation/evaluation_data/cases.jsonl` | Evaluation dataset used in retrieval experiments. |
+| `RETRIEVAL_OUTPUT` | `data/retrieval/experiments` | Directory where experiment results are stored. |
 
-Run from the repository root in PowerShell. Setup requires Python 3.10+ and
-installs `app/retrieval/requirements.txt` into `.venv-retrieval`. It preserves an
-existing `.env`; new options are documented in `.env.example`.
+### Usage Examples
 
-Ollama must be running with `embeddinggemma:300m` available (Ollama >= 0.11.10).
-For this project's Compose instance, the host URL is `http://localhost:11435`;
-inside its network use `http://ollama:11434`. Native Ollama normally uses
-`http://localhost:11434`. Use the root URL without `/v1`.
-For Compose, pull the model with
-`docker exec ia025_ollama ollama pull embeddinggemma:300m`. A native CLI can use
-`ollama pull embeddinggemma:300m` with `OLLAMA_HOST` set to the same instance.
+(MANDATORY) Prepare the corpus and build the baseline index:
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\scripts\retrieval\setup.ps1
-$env:OLLAMA_BASE_URL = 'http://localhost:11435'
-
-# Download/prepare the full legal corpus and separate question cases.
-& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval prepare
-
-# Build or resume the selected corpus; repeated builds reuse existing chunks.
-.\scripts\retrieval\build.ps1
-.\scripts\retrieval\query.ps1 'Quem pode ser dependente no IRPF?'
-
-# Prepare the legal + CARF corpus separately, preserving the small legal setup.
-& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval prepare --include-carf --data-dir data/retrieval-carf --raw-dir data/retrieval/raw/9f0f4263928c6152a40f888da3e63375a24bb0f3
-.\scripts\retrieval\build.ps1 -UsePrepared -DataDir data/retrieval-carf -IndexDir data/retrieval-carf/chroma -Selection all
-.\scripts\retrieval\query.ps1 'Quem pode ser dependente no IRPF?' -DataDir data/retrieval-carf -IndexDir data/retrieval-carf/chroma -Selection all
+```bash
+make retrieval-setup
 ```
 
-If needed, setup accepts `-Python 'C:\path with spaces\python.exe'`. The optional
-`.\scripts\retrieval\start-local-ollama.ps1 -OllamaPath 'C:\path\ollama.exe' -PullModel` starts or
-reuses a local instance on port 11435. It keeps model files, keys, and logs under
-ignored local directories; no Ollama binary or model weights are versioned.
+Run retrieval experiments with the default configuration:
 
-The cache is `data/retrieval/raw/<revision>/`. Prepared artifacts are
-`prepared/corpus.jsonl`, `prepared/questions.jsonl`, and `prepared/manifest.json`.
-`prepare --raw-dir <directory>` can read the upstream JSON files locally;
-`--revision` requires a pinned 40-character Git SHA. Empty/invalid records and
-exact duplicates are reported in the preparation manifest.
+```bash
+make retrieval-compare
+```
 
-### Python interface and saved results
+Override the chunk size and top-k:
+
+```bash
+make retrieval-compare \
+  RETRIEVAL_CHUNK_SIZE=1024 \
+  RETRIEVAL_TOP_K=5
+```
+
+Use a different corpus selection:
+
+```bash
+make retrieval-build \
+  RETRIEVAL_SELECTION=data/retrieval/baseline_irpf.json
+```
+
+Change the evaluation dataset and output directory:
+
+```bash
+make retrieval-compare \
+  RETRIEVAL_CASES=app/evaluation/evaluation_data/cases.jsonl \
+  RETRIEVAL_OUTPUT=data/retrieval/experiments
+```
+
+### Ollama Model Availability
+
+The `retrieval-build` command automatically starts the Ollama container and checks whether the configured embedding model is available.
+
+It polls Ollama for up to six minutes, checking every two seconds. If the model is not available within that period, the command exits with an error.
+
+This avoids attempting to build the vector index before the embedding service is ready.
+---
+
+# 🖥️ Streamlit Application
+
+The application is organized into five tabs, each with a distinct responsibility.
+
+## 1. Chat
+
+The main conversational interface.
+
+- Sends user messages to the locally hosted LLM.
+- Maintains conversation history.
+- Uses the prompt configured in the Prompt Editor.
+- Provides the basic chatbot interaction.
+
+## 2. Prompt Editor
+
+Allows users to customize the chatbot prompt template.
+
+- Edit the prompt used by the Chat tab.
+- Save changes for subsequent messages.
+- Preserve the required `{user_input}` and {chat_history} placeholders.
+
+The standalone evaluation runner uses its configured prompt template independently of changes made in the Streamlit editor.
+
+## 3. Evaluation Dataset
+
+Manages the dataset and evaluates standalone answer generation.
+
+Main features:
+
+- View, edit, add, and remove evaluation cases.
+- Save changes to `app/evaluation/evaluation_data/cases.jsonl`.
+- Execute the standalone generation pipeline.
+- Select previous generation runs and calculate RAGAS metrics.
+
+This tab evaluates answer generation without document retrieval. Consequently, its generated predictions contain an empty `retrieved_contexts` list.
+
+## 4. Retrieval Experiments
+
+Evaluates document retrieval independently of answer generation.
+
+The experiment uses an **One-Factor-at-a-Time (OFAT)** strategy, producing five unique configurations. For a Chunk size = 512 and Top-k = 3:
+
+| Configuration | Chunk size | Top-k |
+| ------------- | ---------: | ----: |
+| Chunk 256     |        256 |     3 |
+| Chunk 512     |        512 |     3 |
+| Chunk 1024    |       1024 |     3 |
+| Top-k 1       |        512 |     1 |
+| Top-k 5       |        512 |     5 |
+
+The reference configuration is shared between the two comparison groups and is executed only once.
+
+Users can configure:
+
+- Reference chunk size and top-k.
+- Chunk overlap.
+- Corpus selection: baseline or entire prepared corpus.
+- Number of evaluation questions.
+- Automatic index building or reuse.
+
+This tab evaluates retrieval behavior, including retrieved chunks, search latency, and execution errors. It does not generate answers or calculate answer-quality metrics.
+
+## 5. End-to-End RAG Evaluation
+
+Evaluates the complete RAG pipeline, combining retrieval, answer generation, and RAGAS evaluation.
+
+The intended workflow is:
+
+1. **Retrieval:** retrieve document chunks for each evaluation question using the selected retrieval configurations.
+2. **Generation:** generate an answer conditioned on the question and its retrieved contexts.
+3. **Scoring:** evaluate the generated answer and retrieved contexts using RAGAS.
+4. **Comparison:** aggregate and compare results across retrieval configurations.
+
+The evaluation considers the following RAGAS metrics:
+
+| Metric             | What it evaluates                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| Answer Relevancy   | Whether the generated answer addresses the user's question.                           |
+| Answer Correctness | Whether the answer agrees with the reference answer.                                  |
+| Faithfulness       | Whether the answer is supported by the retrieved contexts.                            |
+| Context Precision  | Whether the retrieved contexts are relevant to the question.                          |
+| Context Recall     | Whether the retrieved contexts contain the information needed to answer the question. |
+
+Metrics requiring reference answers are only applicable to cases that provide a non-empty `reference`.
+
+Unlike the standalone generation evaluation, this workflow uses the retrieved contexts as input to answer generation and evaluation.
+
+---
+
+# 📚 Data Preparation & Retrieval
+
+The `app.retrieval` module provides corpus preparation, local embeddings, token-based chunking, and persistent ChromaDB indexes.
+
+## Dataset
+
+The initial dataset is [unicamp-dl/BR-TaxQA-R](https://huggingface.co/datasets/unicamp-dl/BR-TaxQA-R), using the pinned revision:
+
+`9f0f4263928c6152a40f888da3e63375a24bb0f3`
+
+The main source files are:
+
+- `referred_legal_documents_QA_2024_v1.1.json`: 478 records, resulting in 461 unique legal documents.
+- `questions_QA_2024_v1.1.json`: 715 questions, answers, and references.
+- `acordaos_CARF_2023.json`: 7,204 case-law documents, optionally included with `prepare --include-carf`.
+
+The default baseline selection is:
+
+`data/retrieval/baseline_irpf.json`
+
+It selects three documents:
+
+- Lei nº 9.250/1995
+- IN RFB nº 2.178
+- Lei nº 7.713
+
+The baseline is intended for initial integration and experimentation. It does not represent the entire legal corpus.
+
+## Retrieval Configuration
+
+| Setting              | Default                  |
+| -------------------- | ------------------------ |
+| Embedding model      | `embeddinggemma:300m`    |
+| Embedding dimension  | 768                      |
+| Chunk unit           | Tokens                   |
+| Chunk size           | 512                      |
+| Chunk overlap        | 50                       |
+| Top-k                | 5                        |
+| Embedding batch size | 32                       |
+| Distance metric      | Cosine                   |
+| Data directory       | `data/retrieval/`        |
+| Index directory      | `data/retrieval/chroma/` |
+
+Token chunking uses the pinned EmbeddingGemma tokenizer:
+
+`onnx-community/embeddinggemma-300m-ONNX`
+
+Revision:
+
+`8cd82455fa7fae53af154775fd1494f5577ef4b0`
+
+The tokenizer is downloaded separately; embedding generation remains handled by Ollama.
+
+Chunk size and overlap determine index identity. Changing these values requires a corresponding index. Top-k changes the number of retrieved results but does not require a new index.
+
+## Python Interface
 
 ```python
 from app.retrieval import RetrievalConfig, Retriever
 
 retriever = Retriever(RetrievalConfig.from_env())
-results = retriever.retrieve("Quem pode ser dependente no IRPF?", top_k=5)
+
+results = retriever.retrieve(
+    "Quem pode ser dependente no IRPF?",
+    top_k=5
+)
+
 contexts = [item["text"] for item in results]
 sources = [item["source"] for item in results]
 ```
 
-Each result contains `chunk_id`, `document_id`, `text`, `source`, `title`,
-`metadata`, `distance`, and `distance_metric`. Metadata includes source aliases,
-dataset revision, and chunk offsets. Questions must be nonempty strings; top-k
-must be a positive integer. Distance is not a probability or quality score.
+Each retrieved result includes its text, source, document and chunk identifiers, metadata, distance, and distance metric.
 
-```powershell
-.\scripts\retrieval\query.ps1 -Cases data/retrieval/smoke_questions.jsonl -OutputDir retrieval_results
-& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval query --cases data/retrieval/prepared/questions.jsonl --limit 10 --output-dir retrieval_results
+Distance represents vector proximity, not a retrieval quality score or probability.
+
+## Retrieval CLI
+
+Run commands from the repository root.
+
+Prepare the corpus:
+
+```bash
+python -m app.retrieval prepare
 ```
 
-Each saved run creates `retrieval_results/<run_id>/retrieval.jsonl` and
-`manifest.json`. Rows retain case IDs, inputs, available references,
-`retrieved_contexts`, full `retrieved_chunks`, latency, and status/errors.
-Original `all_formatted_references` remain available. References are metadata;
-only the question is embedded. The manifest records effective configuration,
-corpus/model identity, dependency versions, and the input file hash.
-Without `--output-dir`, one question prints JSON and cases print JSONL.
-Index-opening failures are also saved, with corpus/configuration, error stage,
-and null search latency when no search occurred. The command exits nonzero on errors. Saved retrieval results are available for
-downstream answer generation.
+Build or resume the baseline index:
 
-### Configuration and index reuse
-
-Retrieval reads `RETRIEVAL_*` settings independently of the chatbot's model
-configuration. Environment variables override `.env`; CLI options override
-retrieval settings. Relative paths from `.env` resolve against the repository
-root. Chunk size/overlap, top-k, batch size, model, endpoint, and corpus selection
-are configurable without editing code.
-
-```powershell
-# Same index, different number of results.
-& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval query 'Quem pode ser dependente no IRPF?' --top-k 3
-
-# Different token chunking requires a corresponding index.
-& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval build --use-prepared --chunk-unit tokens --chunk-size 256 --chunk-overlap 50
-& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval query 'Quem pode ser dependente no IRPF?' --chunk-unit tokens --chunk-size 256 --chunk-overlap 50
-
-# Optional full legal corpus, stored in a separate collection.
-& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval build --use-prepared --selection all
-& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval query 'Quem pode ser dependente no IRPF?' --selection all
+```bash
+python -m app.retrieval build --use-prepared
 ```
 
-The collection fingerprint includes the corpus hash, selected document IDs,
-model digest, dimensions, embedding profile, chunking unit/version/parameters,
-tokenizer identifier/revision/file hash/library version (in token mode), and
-distance. Top-k does not change index identity. Missing, incompatible, or
-incomplete indexes cause explicit errors; query never creates an empty index.
-Reopening requires the prepared corpus and manifest as well as Chroma storage.
-An interrupted build can resume missing chunks. If a hard termination leaves a
-`.build.lock`, remove only that lock after confirming no build is active.
+Retrieve documents for a question:
 
-For compatibility, `RetrievalConfig()` and `chunk_documents(...)` keep their
-original character defaults. Use `RetrievalConfig.from_env()` for the new token
-defaults, or set `chunk_unit="tokens", chunk_size=512, chunk_overlap=50` explicitly.
-An older `.env` with size/overlap but no unit retains character interpretation;
-set `RETRIEVAL_CHUNK_UNIT=tokens` and update both numbers when migrating.
-To reproduce the old baseline explicitly, pass `--chunk-unit characters
---chunk-size 1200 --chunk-overlap 200` to both build and query.
-`build --use-prepared` consumes the prepared corpus without downloading or
-replacing it; without this flag build retains its original prepare-then-build
-behavior, with CARF included only when `--include-carf` is explicit.
-
-Run retrieval tests with `.\scripts\retrieval\test.ps1`. They cover data preparation,
-HTTP failures/validation, persistent Chroma, separate-process reopening,
-idempotence, configuration compatibility, and corpus selection. Chroma tests
-use a real temporary database with deterministic simulated embeddings; they do
-not require Ollama or establish retrieval quality. Real-service checks can be
-repeated by building twice and querying in a fresh process. Data, indexes,
-models, virtual environments, logs, and generated run records are ignored by Git.
-
-### Planned retrieval comparisons and handoff
-
-Prepare the chosen corpus first. The following builds/resumes three token
-indexes and runs five unique settings: `(256,3)`, `(512,3)`, `(1024,3)`, `(512,1)`,
-`(512,5)`. Chunk size varies at top-k 3; top-k varies at size 512. Overlap, corpus,
-tokenizer and embedding model stay fixed. Omitting `-BuildIndexes` reuses indexes.
-
-```powershell
-.\scripts\retrieval\compare.ps1 -Cases data/retrieval/prepared/questions.jsonl -Limit 10 -OutputDir retrieval_results -Selection all -ChunkOverlap 50 -BuildIndexes
-# Equivalent CLI; omit --limit to use all 715 questions.
-& '.\.venv-retrieval\Scripts\python.exe' -m app.retrieval compare --cases data/retrieval/prepared/questions.jsonl --limit 10 --output-dir retrieval_results --selection all --chunk-unit tokens --chunk-overlap 50 --build-indexes
-# Offline tokenizer/content/input-limit audit; does not require Ollama.
-& '.\.venv-retrieval\Scripts\python.exe' scripts/retrieval/validate_tokens.py --data-dir data/retrieval --report data/retrieval/token_validation.json
+```bash
+python -m app.retrieval query "Quem pode ser dependente no IRPF?"
 ```
 
-Comparison manifests and JSONL retain effective configuration, corpus/model
-identity, tokenizer, case IDs, original references, chunks, sources, distances,
-search latency and failures. No relevance metrics or answer-quality scores are
-computed. Distances describe vector proximity only. The Python interface above
-and saved JSONL are the handoff to the generation/evaluation owners; these
-changes do not connect to their LLM, prompts, evaluator or UI.
+Run a retrieval comparison:
 
-Verified counts and source schemas are in [data validation](docs/data-validation.md),
-token budgets in [token validation](docs/token-validation.md), and execution
-results/limitations in [Member 1 validation](docs/member1-validation.md).
-The [second-dataset analysis](docs/second-dataset.md) recommends LARI for a
-different domain, or JurisTCU when explicit retrieval relevance judgments are
-the priority. Selection remains with the group; no second-dataset ingestion was
-implemented.
+```bash
+python -m app.retrieval compare \
+  --cases app/evaluation/evaluation_data/cases.jsonl \
+  --output-dir data/retrieval/experiments \
+  --chunk-unit tokens \
+  --chunk-overlap 50 \
+  --chunk-size 512 \
+  --top-k 3 \
+  --selection data/retrieval/baseline_irpf.json \
+  --build-indexes
+```
 
-## ⚠️ Troubleshooting
+Use `--selection all` to select the entire prepared corpus. Omit `--build-indexes` when compatible indexes already exist.
 
 ---
 
-# Offline Evaluation & QA
+# 📊 Offline Evaluation & RAGAS
 
-Generation and scoring are independent offline stages. Generation does not run RAGAS or retrieve documents (`retrieved_contexts` is always an empty list).
+The project separates standalone generation evaluation from end-to-end RAG evaluation.
 
----
+## Evaluation Dataset Format
 
-## Step 1: Answer Generation
+Evaluation cases are stored as JSONL in:
 
-### 1. Input Dataset Format
+`app/evaluation/evaluation_data/cases.jsonl`
 
-Cases are read line-by-line from `evaluation_data/cases.jsonl`:
+Example:
 
 ```json
-{"case_id": "example_001", "user_input": "Quanto é 2 + 2?", "reference": "4"}
+{
+  "case_id": "example_001",
+  "user_input": "Quanto é 2 + 2?",
+  "reference": "4"
+}
 ```
 
-* **`user_input`**: Required non-empty string.
-* **`case_id`**: Optional (defaults to `line_1`, `line_2`, etc.).
-* **`reference`**: Optional ground-truth answer (passed through to predictions metadata; ignored by the generator).
-* **Handling**: Blank lines are skipped. Invalid cases or generation failures emit an error record and proceed to the next item. Missing input files cause startup errors. The bundled cases serve as smoke examples rather than a benchmark.
+Fields:
 
----
+- `case_id`: optional identifier for the case.
+- `user_input`: required non-empty question.
+- `reference`: optional expected answer, used by reference-dependent evaluation metrics.
 
-### 2. Prerequisites & Environment Setup
+Each line represents one independent evaluation case.
 
-Ensure Ollama is running with the configured model available.
+## Standalone Generation
 
-* **Dependencies**: `app/requirements.txt`
-* **Execution Location**: Repository root
-
-> **Note**: The runner uses the standard `CHAT_TEMPLATE` and `get_llm()` config. Edits made in the Streamlit prompt editor do not carry over to runner executions.
-
----
-
-### 3. Execution Commands
-
-**Standard Execution:**
+Execute the generation runner:
 
 ```bash
 python -m app.evaluation.runner
 ```
 
-**Execution against Docker Compose Ollama (Host Port):**
+The runner processes the evaluation dataset using the configured LLM and prompt template. It does not perform document retrieval or RAGAS scoring.
 
-```bash
-OLLAMA_BASE_URL=http://localhost:11435 python -m app.evaluation.runner
-```
+Each execution creates a unique run directory containing:
 
-**Custom Input / Output Paths:**
+- `predictions.jsonl`: generated answers, case IDs, optional references, latency, and execution status.
+- `manifest.json`: model, prompt, timestamp, input dataset, and execution statistics.
 
-```bash
-python -m app.evaluation.runner --cases evaluation_data/cases.jsonl --output-dir evaluation_results
-```
+## RAGAS Scoring
 
----
-
-### 4. Output Artifacts
-
-Each execution creates a unique directory at `evaluation_results/<run_id>/` (ignored by Git):
-
-* **`predictions.jsonl`**: Contains case ID, line number, user question, model response, optional reference, empty contexts, latency (s), and status. Error records contain `error_type` and `error` with a `null` response.
-* **`manifest.json`**: Captures run ID, UTC timestamp, target model, temperature, effective prompt template, input path, and execution counts (total, successful, failed).
-
----
-
-## Step 2: Scoring Predictions with RAGAS
-
-### 1. Prerequisites & Environment Setup
-
-#### Install Evaluation Dependencies
-
-Install the optional evaluation dependencies (separate from the main chatbot requirements):
+Install evaluation dependencies:
 
 ```bash
 python -m pip install -r app/evaluation/requirements.txt
 ```
 
-> **Version Pinning Note**: Targets RAGAS **0.4.3** using modern `ragas.metrics.collections` and explicit LLM/embedding factories. Pins `langchain-community==0.4.1` to preserve Vertex AI dependencies required by RAGAS 0.4.3.
+The project targets **RAGAS 0.4.3**, using its modern metric collection interfaces and explicit LLM and embedding configurations.
 
-#### Environment Configuration (`.env`)
-
-Configure `EVAL_LLM_MODEL` and `EVAL_EMBEDDING_MODEL` explicitly (these do **not** inherit `OLLAMA_MODEL`, check the `.env.example` file for details):
-
-* **API Compatibility**: Both evaluator endpoints use OpenAI-compatible `/v1` endpoints (e.g., Ollama's `/v1`).
-* **Port Mapping**: Local Ollama typically uses port `11434`; Compose host port uses `11435`.
-* **Requirements**: Evaluator LLM must support structured JSON output; embedding endpoint must support the target model.
-* **Pre-requisite Models**: Ensure target models are already pulled (`ollama pull <model-name>`). If you have a Ollama running container, you can use `docker exec <container-id> ollama pull <model-name>` to pull models.
-
----
-
-### 2. Evaluated Metrics Summary
-
-| Metric | Status | Requirements & Behavior |
-| --- | --- | --- |
-| **Answer Relevancy** | **Active** | Measures response relevance using evaluator LLM + embeddings. Does not require contexts. |
-| **Answer Correctness** | **Active** (Conditional) | Runs only when prediction has a non-empty `reference`. Uses default weights (`0.75` factuality / `0.25` similarity). |
-| **Faithfulness** | *Disabled* | Disabled in this offline stage. |
-| **Context Precision** | *Disabled* | Disabled in this offline stage. |
-| **Context Recall** | *Disabled* | Disabled in this offline stage. |
-
----
-
-### 3. Execution Commands
-
-**Standard Scoring:**
+Score a standalone generation run:
 
 ```bash
-python -m app.evaluation.ragas_adapter evaluation_results/<run_id>/predictions.jsonl
+python -m app.evaluation.ragas_adapter \
+  app/evaluation/evaluation_results/<run_id>/predictions.jsonl
 ```
 
-**Re-scoring to a Custom Directory (Prevents Overwriting):**
+A custom output directory can be specified:
 
 ```bash
-python -m app.evaluation.ragas_adapter evaluation_results/<run_id>/predictions.jsonl --output-dir evaluation_results/<run_id>/another_evaluation
+python -m app.evaluation.ragas_adapter \
+  app/evaluation/evaluation_results/<run_id>/predictions.jsonl \
+  --output-dir app/evaluation/evaluation_results/<run_id>/ragas
 ```
 
+The RAGAS adapter evaluates the metrics supported by the prediction data. In standalone generation runs, context-dependent metrics are not applicable because no retrieval contexts are available.
+
+For end-to-end evaluation, predictions must contain the retrieved contexts alongside the generated answers.
+
+## Evaluation Artifacts
+
+Evaluation runs retain their results locally.
+
+Typical artifacts include:
+
+| File                | Purpose                                                       |
+| ------------------- | ------------------------------------------------------------- |
+| `predictions.jsonl` | Per-case model responses and evaluation inputs.               |
+| `retrieval.jsonl`   | Per-case retrieval results and retrieved chunks.              |
+| `scores.jsonl`      | Per-case RAGAS scores and metric statuses.                    |
+| `summary.json`      | Aggregated metric statistics.                                 |
+| `manifest.json`     | Run configuration, model information, and execution metadata. |
+
+Metric statuses distinguish successful evaluations, errors, skipped cases, and metrics that are not applicable.
+
+Aggregate statistics include mean, standard deviation, valid count, failure count, not-applicable count, and skipped count. Only successful finite scores contribute to the aggregate values.
+
 ---
 
-### 4. Output Artifacts & Error Handling
+# ⚠️ Troubleshooting
 
-Scoring outputs are written alongside the input predictions (or into the designated output directory):
+### Ollama connection errors
 
-* **`scores.jsonl`**: Detailed per-case scores containing `scores`, `metric_status`, and reasons for unavailable metrics:
-* *Missing references / Disabled metrics*: Rendered as `null` with status `not_applicable`.
-* *Failed generation records*: Rendered with status `skipped`.
-* *Metric errors/timeouts*: Rendered as `null` with status `error`. A single failure does not halt processing for other metrics or cases.
-
-
-* **`summary.json`**: Aggregate statistics (`mean`, population `stddev`, `valid_count`, `failure_count`, `not_applicable_count`, `skipped_count`).
-* Only successful finite scores enter statistics.
-* 0 valid scores $\rightarrow$ `mean` and `stddev` are `null`.
-* 1 valid score $\rightarrow$ `stddev` is `0`.
-
-
-* **`manifest.json` (Updated)**: Appends an `evaluation` section storing model/embedding config, RAGAS version, metric settings, and timestamp (API keys are omitted).
-
----
-
-### 5. Running Adapter Tests
-
-Run unit tests without contacting an Ollama server (uses mocked HTTP responses when RAGAS is installed):
+Check that the Ollama container is running:
 
 ```bash
-python -m unittest discover -s tests -v
-```
-## ⚠️ General Troubleshooting
-
----
-
-# Offline Evaluation & QA
-
-Generation and scoring are independent offline stages. Generation does not run RAGAS or retrieve documents (`retrieved_contexts` is always an empty list).
-
----
-
-## Step 1: Answer Generation
-
-### 1. Input Dataset Format
-
-Cases are read line-by-line from `evaluation_data/cases.jsonl`:
-
-```json
-{"case_id": "example_001", "user_input": "Quanto é 2 + 2?", "reference": "4"}
+make logs
 ```
 
-* **`user_input`**: Required non-empty string.
-* **`case_id`**: Optional (defaults to `line_1`, `line_2`, etc.).
-* **`reference`**: Optional ground-truth answer (passed through to predictions metadata; ignored by the generator).
-* **Handling**: Blank lines are skipped. Invalid cases or generation failures emit an error record and proceed to the next item. Missing input files cause startup errors. The bundled cases serve as smoke examples rather than a benchmark.
+Ensure the configured model is available and that the application is using the correct endpoint.
 
----
+Remember:
 
-### 2. Prerequisites & Environment Setup
+- Use `http://ollama:11434` from inside Docker Compose.
+- Use `http://localhost:11435` from the host when using the Compose port mapping.
 
-Ensure Ollama is running with the configured model available.
+### Address already in use
 
-* **Dependencies**: `app/requirements.txt`
-* **Execution Location**: Repository root
+A native Ollama process or another application may already be using the required host port.
 
-> **Note**: The runner uses the standard `CHAT_TEMPLATE` and `get_llm()` config. Edits made in the Streamlit prompt editor do not carry over to runner executions.
+Stop the conflicting process or adjust the Compose port mapping.
 
----
+### Missing embedding or evaluation models
 
-### 3. Execution Commands
+Ensure the models configured in `RETRIEVAL_EMBEDDING_MODEL`, `EVAL_LLM_MODEL`, and `EVAL_EMBEDDING_MODEL` have been pulled into the Ollama instance used by the application.
 
-**Standard Execution:**
+### Missing or incompatible Chroma indexes
 
-```bash
-python -m app.evaluation.runner
-```
+Ensure the index was built using the same corpus, embedding model, chunk size, chunk overlap, and chunking configuration used by the retrieval query.
 
-**Execution against Docker Compose Ollama (Host Port):**
+Use the retrieval build command to create or resume the required indexes.
 
-```bash
-OLLAMA_BASE_URL=http://localhost:11435 python -m app.evaluation.runner
-```
+### RAGAS evaluation failures
 
-**Custom Input / Output Paths:**
+Check:
 
-```bash
-python -m app.evaluation.runner --cases evaluation_data/cases.jsonl --output-dir evaluation_results
-```
+- The evaluator endpoints use the OpenAI-compatible `/v1` URL.
+- The evaluator models are available in Ollama.
+- The evaluation cases contain valid questions and, when required, references.
+- End-to-end predictions contain retrieved contexts for context-dependent metrics.
 
----
-
-### 4. Output Artifacts
-
-Each execution creates a unique directory at `evaluation_results/<run_id>/` (ignored by Git):
-
-* **`predictions.jsonl`**: Contains case ID, line number, user question, model response, optional reference, empty contexts, latency (s), and status. Error records contain `error_type` and `error` with a `null` response.
-* **`manifest.json`**: Captures run ID, UTC timestamp, target model, temperature, effective prompt template, input path, and execution counts (total, successful, failed).
-
----
-
-## Step 2: Scoring Predictions with RAGAS
-
-### 1. Prerequisites & Environment Setup
-
-#### Install Evaluation Dependencies
-
-Install the optional evaluation dependencies (separate from the main chatbot requirements):
-
-```bash
-python -m pip install -r app/evaluation/requirements.txt
-```
-
-> **Version Pinning Note**: Targets RAGAS **0.4.3** using modern `ragas.metrics.collections` and explicit LLM/embedding factories. Pins `langchain-community==0.4.1` to preserve Vertex AI dependencies required by RAGAS 0.4.3.
-
-#### Environment Configuration (`.env`)
-
-Configure `EVAL_LLM_MODEL` and `EVAL_EMBEDDING_MODEL` explicitly (these do **not** inherit `OLLAMA_MODEL`, check the `.env.example` file for details):
-
-* **API Compatibility**: Both evaluator endpoints use OpenAI-compatible `/v1` endpoints (e.g., Ollama's `/v1`).
-* **Port Mapping**: Local Ollama typically uses port `11434`; Compose host port uses `11435`.
-* **Requirements**: Evaluator LLM must support structured JSON output; embedding endpoint must support the target model.
-* **Pre-requisite Models**: Ensure target models are already pulled (`ollama pull <model-name>`). If you have a Ollama running container, you can use `docker exec <container-id> ollama pull <model-name>` to pull models.
-
----
-
-### 2. Evaluated Metrics Summary
-
-| Metric | Status | Requirements & Behavior |
-| --- | --- | --- |
-| **Answer Relevancy** | **Active** | Measures response relevance using evaluator LLM + embeddings. Does not require contexts. |
-| **Answer Correctness** | **Active** (Conditional) | Runs only when prediction has a non-empty `reference`. Uses default weights (`0.75` factuality / `0.25` similarity). |
-| **Faithfulness** | *Disabled* | Disabled in this offline stage. |
-| **Context Precision** | *Disabled* | Disabled in this offline stage. |
-| **Context Recall** | *Disabled* | Disabled in this offline stage. |
-
----
-
-### 3. Execution Commands
-
-**Standard Scoring:**
-
-```bash
-python -m app.evaluation.ragas_adapter evaluation_results/<run_id>/predictions.jsonl
-```
-
-**Re-scoring to a Custom Directory (Prevents Overwriting):**
-
-```bash
-python -m app.evaluation.ragas_adapter evaluation_results/<run_id>/predictions.jsonl --output-dir evaluation_results/<run_id>/another_evaluation
-```
-
----
-
-### 4. Output Artifacts & Error Handling
-
-Scoring outputs are written alongside the input predictions (or into the designated output directory):
-
-* **`scores.jsonl`**: Detailed per-case scores containing `scores`, `metric_status`, and reasons for unavailable metrics:
-* *Missing references / Disabled metrics*: Rendered as `null` with status `not_applicable`.
-* *Failed generation records*: Rendered with status `skipped`.
-* *Metric errors/timeouts*: Rendered as `null` with status `error`. A single failure does not halt processing for other metrics or cases.
-
-
-* **`summary.json`**: Aggregate statistics (`mean`, population `stddev`, `valid_count`, `failure_count`, `not_applicable_count`, `skipped_count`).
-* Only successful finite scores enter statistics.
-* 0 valid scores $\rightarrow$ `mean` and `stddev` are `null`.
-* 1 valid score $\rightarrow$ `stddev` is `0`.
-
-
-* **`manifest.json` (Updated)**: Appends an `evaluation` section storing model/embedding config, RAGAS version, metric settings, and timestamp (API keys are omitted).
-
----
-
-### 5. Running Adapter Tests
-
-Run unit tests without contacting an Ollama server (uses mocked HTTP responses when RAGAS is installed):
-
-```bash
-python -m unittest discover -s tests -v
-```
-## ⚠️ General Troubleshooting
-
-**"Address already in use" Error on Startup**
-If you have a native version of Ollama (or an extension like Continue in VS Code) running directly on your host machine, it may block Docker from binding to the required ports.
-
-* **Solution:** Kill the conflicting host processes and try again. The project maps Ollama to port `11435` on the host to minimize these collisions while keeping internal Docker communication on `11434`.
-
-**Chatbot is unresponsive or throwing connection errors**
-Ensure the model finished downloading completely. If you just ran `make up` for the first time, Ollama is likely still pulling the weights. You can monitor the download progress and backend activity by running `make logs`.
+For detailed error information, inspect `scores.jsonl` and the corresponding execution logs.

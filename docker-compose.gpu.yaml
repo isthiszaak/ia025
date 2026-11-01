@@ -39,9 +39,13 @@ services:
               capabilities: [gpu]
 
   streamlit:
+    user: "${HOST_UID}:${HOST_GID}"
     build:
       context: ./app
       dockerfile: Dockerfile
+      args:
+        UID: ${HOST_UID}
+        GID: ${HOST_GID}
     container_name: ia025_app
     restart: unless-stopped
     ports:
