@@ -1,3 +1,4 @@
+
 services:
   ollama:
     image: ollama/ollama:latest
@@ -8,8 +9,27 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     env_file:
-          - .env
-    entrypoint: [ "/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull $$OLLAMA_MODEL && wait" ]
+      - .env
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        ollama serve &
+        until ollama list >/dev/null 2>&1; do
+          sleep 1
+        done
+
+        echo "Pulling generation model..."
+        ollama pull "$$OLLAMA_MODEL"
+
+        echo "Pulling evaluation embedding model..."
+        ollama pull "$${EVAL_EMBEDDING_MODEL:-nomic-embed-text}"
+
+        echo "Pulling retrieval embedding model..."
+        ollama pull "$${RETRIEVAL_EMBEDDING_MODEL:-embeddinggemma:300m}"
+
+        echo "Ollama models are ready."
+        wait
     deploy:
       resources:
         reservations:
@@ -18,20 +38,27 @@ services:
               count: 1
               capabilities: [gpu]
 
-
   streamlit:
+    user: "${HOST_UID}:${HOST_GID}"
     build:
       context: ./app
       dockerfile: Dockerfile
+      args:
+        UID: ${HOST_UID}
+        GID: ${HOST_GID}
     container_name: ia025_app
     restart: unless-stopped
     ports:
       - "8501:8501"
     volumes:
       - ./app:/app
+      - ./data:/data
     env_file:
       - .env
-
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      EVAL_LLM_BASE_URL: http://ollama:11434/v1
+      EVAL_EMBEDDING_BASE_URL: http://ollama:11434/v1
     depends_on:
       - ollama
 

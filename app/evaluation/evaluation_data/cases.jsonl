@@ -1,3 +1,2 @@
-{"case_id": "example_001", "user_input": "Quanto é 2 + 8?"}
-{"case_id": "example_002", "user_input": "Explique em uma frase o que é um modelo de linguagem."}
-{"case_id": NaN, "user_input": ""}
+{"case_id": "example_002", "user_input": "Quem está obrigado a apresentar a Declaração de Ajuste Anual relativa ao exercício de 2024, ano-calendário de 2023?"}
+{"case_id": "example_001", "user_input": "2+2?"}

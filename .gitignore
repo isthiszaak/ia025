@@ -227,3 +227,16 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# Streamlit
+.streamlit/secrets.toml
+
+git_key
+git_key.pub
+
+# Local retrieval tools, environments, data, and outputs
+.tools/
+.venv-retrieval/
+data/retrieval/
+data/retrieval-carf/
+retrieval_results/
+.cache/
