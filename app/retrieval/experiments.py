@@ -11,8 +11,8 @@ from uuid import uuid4
 from .index import Retriever, build_index, dependency_versions
 
 
-CHUNK_SIZES = (256, 512, 1024)
-TOP_K_VALUES = (1, 3, 5)
+CHUNK_SIZES = (256, 512)
+TOP_K_VALUES = (1, 3)
 CASE_FIELDS = ("case_id", "user_input", "reference", "references",
                "all_formatted_references", "all_formated_references")
 
@@ -42,34 +42,73 @@ def corpus_snapshot(config):
     return snapshot
 
 
-def _configurations(config, fixed_top_k, fixed_chunk_size):
+def _configurations(
+    config,
+    fixed_top_k,
+    fixed_chunk_size,
+    all_combinations=False,
+):
     if config.chunk_unit != "tokens":
         raise ValueError("As comparações exigem chunk_unit=tokens")
+
     if not 0 <= config.chunk_overlap < min(CHUNK_SIZES):
         raise ValueError("O overlap constante deve ser menor que 256 tokens")
-    if isinstance(fixed_top_k, bool) or fixed_top_k not in TOP_K_VALUES:
-        raise ValueError("fixed_top_k deve ser 1, 3 ou 5")
-    if isinstance(fixed_chunk_size, bool) or fixed_chunk_size not in CHUNK_SIZES:
-        raise ValueError("fixed_chunk_size deve ser 256, 512 ou 1024 tokens")
-    combinations = [(size, fixed_top_k) for size in CHUNK_SIZES]
-    combinations += [(fixed_chunk_size, top_k) for top_k in TOP_K_VALUES]
-    return [replace(config, chunk_size=size, top_k=top_k)
-            for size, top_k in dict.fromkeys(combinations)]
+
+    if all_combinations:
+        combinations = [
+            (chunk_size, top_k)
+            for chunk_size in CHUNK_SIZES
+            for top_k in TOP_K_VALUES
+        ]
+    else:
+        if isinstance(fixed_top_k, bool) or fixed_top_k not in TOP_K_VALUES:
+            raise ValueError(
+                f"fixed_top_k deve ser um dos valores {TOP_K_VALUES}"
+            )
+
+        if (
+            isinstance(fixed_chunk_size, bool)
+            or fixed_chunk_size not in CHUNK_SIZES
+        ):
+            raise ValueError(
+                f"fixed_chunk_size deve ser um dos valores {CHUNK_SIZES}"
+            )
+
+        combinations = [(fixed_chunk_size, fixed_top_k)]
+
+    return [
+        replace(config, chunk_size=size, top_k=top_k)
+        for size, top_k in combinations
+    ]
 
 
-def run_comparisons(config, cases, output_dir, fixed_top_k=3, fixed_chunk_size=512, build=False):
-    """Run five planned settings and persist successes and failures for each case.
+def run_comparisons(
+    config,
+    cases,
+    output_dir,
+    fixed_top_k=3,
+    fixed_chunk_size=512,
+    build=False,
+    all_combinations=False,
+):
+    """Run either one configuration or all planned combinations.
 
-    ``cases`` is the same validated list of case_id/user_input dictionaries used
-    by the query CLI. Only user_input reaches the retriever. All configurations
-    retain the caller's overlap, corpus, tokenizer and embedding settings. There
-    are no relevance or answer-quality metrics. Index construction is opt-in and
-    uses the already prepared corpus; changes to top-k reuse the open index.
+    Cases use the same validated list of case_id/user_input dictionaries.
+    Only user_input reaches the retriever. All configurations retain the
+    caller's overlap, corpus, tokenizer and embedding settings.
 
-    Returns a JSON-compatible summary, including the unique output directory and
-    total error count. Artifacts are written even if index build/open fails.
+    Index construction is opt-in. Configurations with the same chunk size
+    reuse the same open index.
+
+    Returns a JSON-compatible summary and persists successes and failures.
     """
-    configurations = _configurations(config, fixed_top_k, fixed_chunk_size)
+    configurations = _configurations(
+        config=config,
+        fixed_top_k=fixed_top_k,
+        fixed_chunk_size=fixed_chunk_size,
+        all_combinations=all_combinations,
+    )
+
     cases = list(cases)
     if not cases or any(not isinstance(case, dict)
                         or not isinstance(case.get("user_input"), str)
@@ -78,14 +117,37 @@ def run_comparisons(config, cases, output_dir, fixed_top_k=3, fixed_chunk_size=5
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S") + "_" + uuid4().hex[:8]
     destination = Path(output_dir) / run_id
     destination.mkdir(parents=True, exist_ok=False)
-    common = {"run_id": run_id, "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-              "stage": "retrieval_only", "protocol": "one_factor_at_a_time",
-              "fixed_top_k": fixed_top_k, "fixed_chunk_size": fixed_chunk_size,
-              "chunk_overlap_tokens": config.chunk_overlap,
-              "build_indexes": bool(build), "dependencies": dependency_versions(),
-              "corpus": corpus_snapshot(config), "cases_count": len(cases),
-              "cases_sha256": hashlib.sha256(json.dumps(cases, ensure_ascii=False,
-                  sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")).hexdigest()}
+    common = {
+        "run_id": run_id,
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "stage": "retrieval_only",
+        "protocol": (
+            "full_factorial"
+            if all_combinations
+            else "single_configuration"
+        ),
+        "execution_mode": (
+            "all_combinations"
+            if all_combinations
+            else "single"
+        ),
+        "fixed_top_k": None if all_combinations else fixed_top_k,
+        "fixed_chunk_size": None if all_combinations else fixed_chunk_size,
+        "chunk_overlap_tokens": config.chunk_overlap,
+        "build_indexes": bool(build),
+        "dependencies": dependency_versions(),
+        "corpus": corpus_snapshot(config),
+        "cases_count": len(cases),
+        "cases_sha256": hashlib.sha256(
+            json.dumps(
+                cases,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest(),
+    }
     summary = {**common, "output_dir": str(destination), "comparisons_count": len(configurations),
                "retrieval_count": 0, "errors": 0, "state": "running", "runs": []}
     _write_json(destination / "manifest.json", summary)

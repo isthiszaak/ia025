@@ -1,5 +1,7 @@
 
 """End-to-end RAG evaluation: retrieval, contextual generation and RAGAS."""
+import unicodedata
+import re
 
 import argparse
 import asyncio
@@ -26,6 +28,11 @@ from app.backend.prompts import RAG_PROMPT
 
 ROOT = Path(__file__).resolve().parents[2]
 
+DATASET_PATH = (
+    ROOT / "data/retrieval/raw/"
+    "9f0f4263928c6152a40f888da3e63375a24bb0f3/"
+    "questions_QA_2024_v1.1.json"
+)
 
 def load_cases(path):
     cases = []
@@ -75,6 +82,48 @@ def generate_answer(question, contexts, chain):
 
     return str(response)
 
+
+def normalize_question(text):
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(
+        char for char in text
+        if not unicodedata.combining(char)
+    )
+    text = text.lower()
+    text = re.sub(r"[^\w\s]", " ", text)
+    return " ".join(text.split())
+
+
+def enrich_cases_with_references(cases, dataset_path):
+    with Path(dataset_path).open(encoding="utf-8") as file:
+        dataset = json.load(file)
+
+    references = {
+        normalize_question(item["question_text"]): item
+        for item in dataset
+    }
+
+    enriched = []
+
+    for case in cases:
+        match = references.get(
+            normalize_question(case["user_input"])
+        )
+
+        enriched_case = case.copy()
+
+        if match:
+            enriched_case["reference"] = "\n".join(
+                match["answer_cleaned"]
+            )
+            enriched_case["reference_match"] = "exact"
+        else:
+            enriched_case["reference"] = None
+            enriched_case["reference_match"] = "not_found"
+
+        enriched.append(enriched_case)
+
+    return enriched
 
 def generate_predictions(retrieval_path, predictions_path, llm):
     template = PromptTemplate(
@@ -145,6 +194,14 @@ def generate_predictions(retrieval_path, predictions_path, llm):
 
     write_jsonl(predictions_path, predictions)
 
+    for prediction in predictions:
+        reference = prediction.get("reference")
+
+        print(
+            f"CASE: {prediction.get('case_id')} | "
+            f"REFERENCE: {'Present' if reference else 'Not Present'} | "
+        )
+
     return predictions
 
 
@@ -208,12 +265,25 @@ def main():
     parser.add_argument("--selection", type=str, required=True)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--build-indexes", action="store_true")
+    parser.add_argument(
+        "--all-combinations",
+        action="store_true",
+        help="Execute todas as combinações de CHUNK_SIZES e TOP_K_VALUES",
+    )
 
     args = parser.parse_args()
 
     load_dotenv(ROOT / ".env", override=False)
 
     cases = load_cases(args.cases)
+    cases = enrich_cases_with_references(cases, DATASET_PATH)
+
+    for case in cases:
+        print(
+            case["case_id"],
+            case["reference_match"],
+            bool(case["reference"])
+        )
 
     if args.limit is not None:
         cases = cases[:args.limit]
@@ -235,7 +305,7 @@ def main():
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Stage 1: execute the five retrieval configurations.
+    # Stage 1: execute the four retrieval configurations.
     retrieval_summary = run_comparisons(
         config=retrieval_config,
         cases=cases,
@@ -243,6 +313,7 @@ def main():
         fixed_top_k=args.fixed_top_k,
         fixed_chunk_size=args.fixed_chunk_size,
         build=args.build_indexes,
+        all_combinations=args.all_combinations,
     )
 
     run_dir = Path(retrieval_summary["output_dir"])
@@ -276,9 +347,9 @@ def main():
         "protocol": "end_to_end_rag",
         "metrics": [
             "answer_relevancy",
-            "answer_correctness",
+            # "answer_correctness",
             "faithfulness",
-            "context_precision",
+            # "context_precision",
             "context_recall",
         ],
         "configurations": comparison,
