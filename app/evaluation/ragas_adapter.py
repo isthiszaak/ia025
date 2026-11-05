@@ -1,4 +1,3 @@
-
 """Score saved predictions using RAGAS collections metrics."""
 
 import argparse
@@ -11,13 +10,17 @@ import math
 import os
 from pathlib import Path
 import statistics
+import time
 
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 METRICS = (
     "answer_relevancy",
-    "answer_correctness",
+    # "answer_correctness",
     "faithfulness",
-    "context_precision",
+    # "context_precision",
     "context_recall",
 )
 
@@ -73,9 +76,9 @@ def build_metrics(config):
     from ragas.embeddings.base import embedding_factory
     from ragas.llms import llm_factory
     from ragas.metrics.collections import (
-        AnswerCorrectness,
+        # AnswerCorrectness,
         AnswerRelevancy,
-        ContextPrecision,
+        # ContextPrecision,
         ContextRecall,
         Faithfulness,
     )
@@ -117,12 +120,12 @@ def build_metrics(config):
             embeddings=embeddings,
             strictness=config.strictness,
         ),
-        "answer_correctness": AnswerCorrectness(
-            llm=llm,
-            embeddings=embeddings,
-        ),
+        # "answer_correctness": AnswerCorrectness(
+        #     llm=llm,
+        #     embeddings=embeddings,
+        # ),
         "faithfulness": Faithfulness(llm=llm),
-        "context_precision": ContextPrecision(llm=llm),
+        # "context_precision": ContextPrecision(llm=llm),
         "context_recall": ContextRecall(llm=llm),
     }
 
@@ -133,11 +136,13 @@ async def score_case(case, metrics, timeout_seconds):
     scores = {name: None for name in METRICS}
     statuses = {name: "not_applicable" for name in METRICS}
     reasons = {}
+    metric_durations = {name: None for name in METRICS}
 
     record = {
         "scores": scores,
         "metric_status": statuses,
         "reasons": reasons,
+        "metric_duration_seconds": metric_durations,
     }
 
     if not isinstance(case, dict):
@@ -156,30 +161,30 @@ async def score_case(case, metrics, timeout_seconds):
         contexts = []
 
     contexts = [
-        context for context in contexts
+        context
+        for context in contexts
         if isinstance(context, str) and context.strip()
     ]
-
     has_contexts = bool(contexts)
 
-    # Define which metrics are applicable to this prediction.
+    # Define which active metrics are applicable to this prediction.
     applicable = {
         "answer_relevancy": True,
-        "answer_correctness": has_reference,
+        # "answer_correctness": has_reference,
         "faithfulness": has_contexts,
-        "context_precision": has_reference and has_contexts,
+        # "context_precision": has_reference and has_contexts,
         "context_recall": has_reference and has_contexts,
     }
 
     if not has_reference:
-        reasons["answer_correctness"] = "missing_reference"
-        reasons["context_precision"] = "missing_reference"
+        # reasons["answer_correctness"] = "missing_reference"
+        # reasons["context_precision"] = "missing_reference"
         reasons["context_recall"] = "missing_reference"
 
     if not has_contexts:
         reasons["faithfulness"] = "missing_retrieved_contexts"
         if has_reference:
-            reasons["context_precision"] = "missing_retrieved_contexts"
+            # reasons["context_precision"] = "missing_retrieved_contexts"
             reasons["context_recall"] = "missing_retrieved_contexts"
 
     # Generation-dependent metrics cannot run after generation failure.
@@ -188,21 +193,35 @@ async def score_case(case, metrics, timeout_seconds):
     if generation_failed:
         for name in (
             "answer_relevancy",
-            "answer_correctness",
+            # "answer_correctness",
             "faithfulness",
         ):
             if applicable[name]:
                 statuses[name] = "skipped"
                 reasons[name] = "generation_failed"
 
-    for name, is_applicable in applicable.items():
+    for metric_index, (name, is_applicable) in enumerate(
+        applicable.items(), 1
+    ):
+        print(
+            f"    Metric {metric_index}/{len(METRICS)} | "
+            f"{name} | "
+            f"{'Computing' if is_applicable else 'Not applicable'}",
+            flush=True,
+        )
+
         if not is_applicable or statuses[name] == "skipped":
             continue
 
         # Retrieval metrics can still run if generation failed.
-        if name in ("answer_relevancy", "answer_correctness", "faithfulness"):
-            if generation_failed:
-                continue
+        if name in (
+            "answer_relevancy",
+            # "answer_correctness",
+            "faithfulness",
+        ) and generation_failed:
+            continue
+
+        metric_start = time.perf_counter()
 
         try:
             kwargs = {
@@ -211,31 +230,30 @@ async def score_case(case, metrics, timeout_seconds):
 
             if name in (
                 "answer_relevancy",
-                "answer_correctness",
+                # "answer_correctness",
                 "faithfulness",
             ):
                 kwargs["response"] = case.get("response")
 
             if name in (
                 "faithfulness",
-                "context_precision",
+                # "context_precision",
                 "context_recall",
             ):
                 kwargs["retrieved_contexts"] = contexts
 
             if name in (
-                "answer_correctness",
-                "context_precision",
+                # "answer_correctness",
+                # "context_precision",
                 "context_recall",
             ):
                 kwargs["reference"] = reference
 
-            for field in ("user_input",):
-                if (
-                    not isinstance(kwargs.get(field), str)
-                    or not kwargs[field].strip()
-                ):
-                    raise ValueError(f"{field} must be nonempty")
+            if (
+                not isinstance(kwargs.get("user_input"), str)
+                or not kwargs["user_input"].strip()
+            ):
+                raise ValueError("user_input must be nonempty")
 
             if "response" in kwargs:
                 if (
@@ -243,6 +261,16 @@ async def score_case(case, metrics, timeout_seconds):
                     or not kwargs["response"].strip()
                 ):
                     raise ValueError("response must be nonempty")
+
+            # if name == "answer_correctness":
+            #     print("\n--- ANSWER CORRECTNESS DEBUG ---")
+            #     print("CASE:", case.get("case_id"))
+            #     print("USER INPUT:", repr(kwargs["user_input"]))
+            #     print("REFERENCE LENGTH:", len(reference))
+            #     print("RESPONSE LENGTH:", len(kwargs["response"]))
+            #     print("REFERENCE PREVIEW:", repr(reference[:500]))
+            #     print("RESPONSE PREVIEW:", repr(kwargs["response"][:500]))
+            #     print("--------------------------------", flush=True)
 
             result = await asyncio.wait_for(
                 metrics[name].ascore(**kwargs),
@@ -259,7 +287,31 @@ async def score_case(case, metrics, timeout_seconds):
 
         except Exception as exc:
             statuses[name] = "error"
-            reasons[name] = f"{type(exc).__name__}: {exc}"
+
+            last_completion = getattr(exc, "last_completion", None)
+            reasons[name] = (
+                f"{type(exc).__name__}: {repr(exc)} | "
+                f"last_completion={repr(last_completion)}"
+            )
+
+            # if name == "answer_correctness":
+            #     print("\n--- ANSWER CORRECTNESS ERROR ---")
+            #     print("CASE:", case.get("case_id"))
+            #     print("ERROR TYPE:", type(exc).__name__)
+            #     print("ERROR:", repr(exc))
+            #     print("LAST COMPLETION:", repr(last_completion))
+            #     print("--------------------------------", flush=True)
+
+        finally:
+            elapsed = time.perf_counter() - metric_start
+            metric_durations[name] = round(elapsed, 3)
+
+            print(
+                f" ------------ | "
+                f"Status: {statuses[name]} | "
+                f"Duration: {elapsed:.2f}s",
+                flush=True,
+            )
 
     return record
 
@@ -294,6 +346,7 @@ async def evaluate_predictions(
         )
 
     values = {name: [] for name in METRICS}
+    metric_times = {name: [] for name in METRICS}
 
     counts = {
         name: {
@@ -308,6 +361,14 @@ async def evaluate_predictions(
     total = 0
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    total_cases = sum(
+        1
+        for line in predictions_path.open(encoding="utf-8")
+        if line.strip()
+    )
+
+    case_index = 0
+
     with predictions_path.open(encoding="utf-8") as source:
         with (output_dir / "scores.jsonl").open(
             "x", encoding="utf-8"
@@ -317,6 +378,14 @@ async def evaluate_predictions(
                     continue
 
                 total += 1
+                case_index += 1
+                progress = (case_index / total_cases) * 100
+
+                print(
+                    f"\nCase {case_index}/{total_cases} "
+                    f"| Progress: {progress:.1f}%",
+                    flush=True,
+                )
 
                 try:
                     case = json.loads(line)
@@ -331,17 +400,29 @@ async def evaluate_predictions(
                             name: None for name in METRICS
                         },
                         "metric_status": {
-                            name: "error" if name in metrics
-                            else "not_applicable"
+                            name: (
+                                "error" if name in metrics
+                                else "not_applicable"
+                            )
                             for name in METRICS
                         },
                         "reasons": {},
+                        "metric_duration_seconds": {
+                            name: None for name in METRICS
+                        },
                         "error": f"{type(exc).__name__}: {exc}",
                     }
 
                 record["prediction_line_number"] = line_number
 
                 for name in METRICS:
+                    elapsed = record.get(
+                        "metric_duration_seconds", {}
+                    ).get(name)
+
+                    if elapsed is not None:
+                        metric_times[name].append(elapsed)
+
                     status = record["metric_status"][name]
 
                     count_key = {
@@ -378,6 +459,14 @@ async def evaluate_predictions(
                     statistics.pstdev(values[name])
                     if values[name] else None
                 ),
+                "total_duration_seconds": round(
+                    sum(metric_times[name]), 3
+                ),
+                "mean_duration_seconds": (
+                    round(statistics.mean(metric_times[name]), 3)
+                    if metric_times[name] else None
+                ),
+                "attempted_count": len(metric_times[name]),
                 **counts[name],
             }
             for name in METRICS
@@ -394,7 +483,7 @@ async def evaluate_predictions(
         "structured_output": "instructor_json",
         "config": asdict(config),
         "enabled_metrics": list(metrics),
-        "answer_correctness_weights": [0.75, 0.25],
+        # "answer_correctness_weights": [0.75, 0.25],
         "total_cases": total,
     }
 
@@ -449,8 +538,6 @@ def main():
     )
 
     args = parser.parse_args()
-
-    from dotenv import load_dotenv
 
     load_dotenv(
         Path(__file__).resolve().parents[2] / ".env"

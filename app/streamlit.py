@@ -13,6 +13,9 @@ from backend.llm import get_llm
 from backend.pipeline import run_query
 from backend.prompts import CHAT_TEMPLATE
 
+import subprocess
+import threading
+import sys
 
 # ============================================================
 # CONFIGURATION
@@ -52,19 +55,19 @@ RETRIEVAL_RESULTS_DIR = (
     / "experiments"
 )
 
-RUNNER_MODULE = "app.evaluation.runner"
-RAGAS_MODULE = "app.evaluation.ragas_adapter"
-RETRIEVAL_MODULE = "app.retrieval"
+RUNNER_MODULE = "evaluation.runner"
+RAGAS_MODULE = "evaluation.ragas_adapter"
+RETRIEVAL_MODULE = "retrieval"
 
 
 # Retrieval experiment options supported by experiments.py
-CHUNK_SIZES = [256, 512, 1024]
-TOP_K_VALUES = [1, 3, 5]
-RUNNER_MODULE = "app.evaluation.runner"
-RAGAS_MODULE = "app.evaluation.ragas_adapter"
+CHUNK_SIZES = [256, 512]
+TOP_K_VALUES = [1, 3]
+RUNNER_MODULE = "evaluation.runner"
+RAGAS_MODULE = "evaluation.ragas_adapter"
 
 
-END_TO_END_MODULE = "app.evaluation.end_to_end_runner"
+END_TO_END_MODULE = "evaluation.end_to_end_runner"
 
 END_TO_END_RESULTS_DIR = (
     APP_DIR
@@ -164,14 +167,62 @@ def execute_script(module_name, extra_args=None):
     )
 
 
-def execute_command(command):
-    """Execute a complete command from the project root."""
+import os
+import subprocess
+import threading
+import sys
 
-    return subprocess.run(
+
+def execute_command(command):
+    env = os.environ.copy()
+
+    # /app é o diretório que contém os módulos do projeto.
+    env["PYTHONPATH"] = (
+        "/:" + env.get("PYTHONPATH", "")
+    )
+
+    process = subprocess.Popen(
         command,
-        cwd=PROJECT_ROOT,
-        capture_output=True,
-        text=True
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+        env=env,
+    )
+
+    stdout_lines = []
+    stderr_lines = []
+
+    def stream_output(pipe, storage, output_stream):
+        for line in iter(pipe.readline, ""):
+            storage.append(line)
+            print(line, end="", file=output_stream, flush=True)
+
+        pipe.close()
+
+    stdout_thread = threading.Thread(
+        target=stream_output,
+        args=(process.stdout, stdout_lines, sys.stdout),
+    )
+
+    stderr_thread = threading.Thread(
+        target=stream_output,
+        args=(process.stderr, stderr_lines, sys.stderr),
+    )
+
+    stdout_thread.start()
+    stderr_thread.start()
+
+    returncode = process.wait()
+
+    stdout_thread.join()
+    stderr_thread.join()
+
+    return subprocess.CompletedProcess(
+        args=command,
+        returncode=returncode,
+        stdout="".join(stdout_lines),
+        stderr="".join(stderr_lines),
     )
 
 
@@ -1318,15 +1369,9 @@ with end_to_end_tab:
 
     st.header("End-to-End RAG Evaluation")
 
-    st.write(
-        "Evaluate the complete RAG pipeline: retrieval, contextual "
-        "generation and answer quality."
-    )
-
     st.info(
-        "This experiment independently executes five retrieval "
-        "configurations, generates answers using the retrieved contexts "
-        "and evaluates them with five RAGAS metrics."
+    "Evaluate the complete RAG pipeline using four retrieval "
+    "configurations, contextual generation and three RAGAS metrics."
     )
 
     st.subheader("Experiment Dataset")
@@ -1350,22 +1395,35 @@ with end_to_end_tab:
 
     st.subheader("Retrieval Parameters")
 
+    e2e_execution_mode = st.radio(
+        "Execution mode",
+        options=["single", "all"],
+        format_func=lambda value: (
+            "Single configuration"
+            if value == "single"
+            else "All 4 combinations"
+        ),
+        horizontal=True,
+        key="e2e_execution_mode",
+    )
+
     col1, col2 = st.columns(2)
 
     with col1:
-        e2e_chunk_size = st.selectbox(
-            "Reference chunk size (tokens)",
-            options=CHUNK_SIZES,
-            index=1,
-            key="e2e_chunk_size",
-        )
+        if e2e_execution_mode == "single":
+            e2e_chunk_size = st.selectbox(
+                "Reference chunk size (tokens)",
+                options=CHUNK_SIZES,
+                index=1,
+                key="e2e_chunk_size",
+            )
 
-        e2e_top_k = st.selectbox(
-            "Reference top-k",
-            options=TOP_K_VALUES,
-            index=1,
-            key="e2e_top_k",
-        )
+            e2e_top_k = st.selectbox(
+                "Reference top-k",
+                options=TOP_K_VALUES,
+                index=1,
+                key="e2e_top_k",
+            )
 
     with col2:
         e2e_overlap = st.number_input(
@@ -1388,6 +1446,11 @@ with end_to_end_tab:
             key="e2e_selection",
         )
 
+    if e2e_execution_mode == "all":
+        st.caption(
+            "All combinations of CHUNK_SIZES and TOP_K_VALUES "
+            "will be executed."
+        )
     st.divider()
 
     st.subheader("Questions to Execute")
@@ -1424,22 +1487,31 @@ with end_to_end_tab:
 
     st.subheader("Experiment Preview")
 
-    e2e_preview = pd.DataFrame([
-        {
-            "Configuration": f"Chunk {size}",
-            "Chunk size": size,
-            "Top-k": e2e_top_k,
-        }
-        for size in CHUNK_SIZES
-    ] + [
-        {
-            "Configuration": f"Top-k {top_k}",
-            "Chunk size": e2e_chunk_size,
-            "Top-k": top_k,
-        }
-        for top_k in TOP_K_VALUES
-        if top_k != e2e_top_k
-    ])
+    if e2e_execution_mode == "all":
+
+        experiment_combinations = [
+            {
+                "Configuration": f"Chunk {chunk_size} | Top-k {top_k}",
+                "Chunk size": chunk_size,
+                "Top-k": top_k,
+            }
+            for chunk_size in CHUNK_SIZES
+            for top_k in TOP_K_VALUES
+        ]
+
+    else:
+
+        experiment_combinations = [
+            {
+                "Configuration": (
+                    f"Chunk {e2e_chunk_size} | Top-k {e2e_top_k}"
+                ),
+                "Chunk size": e2e_chunk_size,
+                "Top-k": e2e_top_k,
+            }
+        ]
+
+    e2e_preview = pd.DataFrame(experiment_combinations)
 
     st.dataframe(
         e2e_preview,
@@ -1448,7 +1520,8 @@ with end_to_end_tab:
     )
 
     st.caption(
-        "The reference configuration is shared and executed only once."
+        f"{len(experiment_combinations)} retrieval configuration(s) "
+        "will be executed."
     )
 
     st.divider()
@@ -1489,13 +1562,22 @@ with end_to_end_tab:
             str(END_TO_END_RESULTS_DIR),
             "--chunk-overlap",
             str(int(e2e_overlap)),
-            "--fixed-chunk-size",
-            str(int(e2e_chunk_size)),
-            "--fixed-top-k",
-            str(int(e2e_top_k)),
             "--selection",
             selection,
         ]
+
+        if e2e_execution_mode == "all":
+
+            command.append("--all-combinations")
+
+        else:
+
+            command.extend([
+                "--fixed-chunk-size",
+                str(int(e2e_chunk_size)),
+                "--fixed-top-k",
+                str(int(e2e_top_k)),
+            ])
 
         if e2e_limit is not None:
             command.extend([
@@ -1568,47 +1650,151 @@ with end_to_end_tab:
 
             st.subheader("Configuration Comparison")
 
+            metric_labels = {
+                "answer_relevancy": "Answer Relevancy",
+                # "answer_correctness": "Answer Correctness",
+                "faithfulness": "Faithfulness",
+                # "context_precision": "Context Precision",
+                "context_recall": "Context Recall",
+            }
+
+            metric_columns = list(metric_labels.keys())
+
             comparison_rows = []
 
             for configuration in comparison.get(
                 "configurations", []
             ):
                 row = {
-                    "Configuration": configuration["setting"],
+                    "Configuration": (
+                        f"Chunk {configuration['chunk_size']} "
+                        f"| Top-k {configuration['top_k']}"
+                    ),
                     "Chunk size": configuration["chunk_size"],
                     "Top-k": configuration["top_k"],
                 }
 
-                for metric, values in configuration["metrics"].items():
+                metrics = configuration.get("metrics", {})
+
+                for metric in metric_columns:
+                    values = metrics.get(metric, {})
                     row[metric] = values.get("mean")
 
                 comparison_rows.append(row)
 
             comparison_df = pd.DataFrame(comparison_rows)
 
-            st.dataframe(
-                comparison_df,
-                width="stretch",
-                hide_index=True,
-                column_config={
-                    metric: st.column_config.NumberColumn(
-                        metric,
-                        format="%.4f",
-                    )
-                    for metric in [
-                        "answer_relevancy",
-                        "answer_correctness",
-                        "faithfulness",
-                        "context_precision",
-                        "context_recall",
-                    ]
-                },
-            )
+            if comparison_df.empty:
+                st.warning("No comparison results available.")
 
-            st.caption(
-                "Values represent the mean score across valid cases. "
-                "Higher values indicate better results."
-            )
+            else:
+                # ------------------------------------------------
+                # 1. COMPARISON TABLE
+                # ------------------------------------------------
+
+                st.markdown("#### Metrics Overview")
+
+                display_df = comparison_df.rename(
+                    columns=metric_labels
+                )
+
+                display_metrics = list(metric_labels.values())
+
+                styled_df = (
+                    display_df.style
+                    .format(
+                        {
+                            metric: "{:.4f}"
+                            for metric in display_metrics
+                        },
+                        na_rep="N/A",
+                    )
+                    .highlight_max(
+                        subset=display_metrics,
+                        axis=0,
+                        props=(
+                            "background-color: #d4edda; "
+                            "color: #155724; "
+                            "font-weight: bold;"
+                        ),
+                    )
+                )
+
+                st.dataframe(
+                    styled_df,
+                    width="stretch",
+                    hide_index=True,
+                )
+
+                st.caption(
+                    "Each row represents a retrieval configuration. "
+                    "The highest mean score for each metric is highlighted. "
+                    "Higher values indicate better performance."
+                )
+
+                # ------------------------------------------------
+                # 2. METRIC COMPARISON CHART
+                # ------------------------------------------------
+
+                st.markdown("#### Performance by Metric")
+
+                selected_metric = st.selectbox(
+                    "Select a metric to compare:",
+                    options=metric_columns,
+                    format_func=lambda metric: metric_labels[metric],
+                    key="e2e_comparison_metric",
+                )
+
+                chart_df = comparison_df[
+                    ["Configuration", selected_metric]
+                ].dropna()
+
+                st.bar_chart(
+                    chart_df,
+                    x="Configuration",
+                    y=selected_metric,
+                    height=400,
+                )
+
+                # ------------------------------------------------
+                # 3. BEST CONFIGURATION PER METRIC
+                # ------------------------------------------------
+
+                st.markdown("#### Best Configuration per Metric")
+
+                best_rows = []
+
+                for metric in metric_columns:
+                    valid_results = comparison_df.dropna(
+                        subset=[metric]
+                    )
+
+                    if valid_results.empty:
+                        continue
+
+                    best = valid_results.loc[
+                        valid_results[metric].idxmax()
+                    ]
+
+                    best_rows.append({
+                        "Metric": metric_labels[metric],
+                        "Best configuration": best["Configuration"],
+                        "Mean score": best[metric],
+                    })
+
+                best_df = pd.DataFrame(best_rows)
+
+                st.dataframe(
+                    best_df,
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "Mean score": st.column_config.NumberColumn(
+                            "Mean score",
+                            format="%.4f",
+                        )
+                    },
+                )
 
             st.divider()
 
