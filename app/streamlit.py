@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from datetime import datetime, timezone
 import pandas as pd
+from dotenv import load_dotenv
 
 
 from backend.llm import get_llm
@@ -34,6 +35,7 @@ st.title("🤖 Local LLM Chatbot")
 # Project paths
 APP_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = APP_DIR.parent
+load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 CASES_PATH = (
     APP_DIR
@@ -75,6 +77,19 @@ END_TO_END_RESULTS_DIR = (
     / "evaluation_results"
     / "end_to_end"
 )
+
+
+METRIC_LABELS = {
+    "answer_relevancy": "Answer Relevancy",
+    "answer_correctness": "Answer Correctness",
+    "bleu": "BLEU-4",
+    "rouge1": "ROUGE-1",
+    "rouge2": "ROUGE-2",
+    "rouge_l": "ROUGE-L",
+    "faithfulness": "Faithfulness",
+    "context_precision": "Context Precision",
+    "context_recall": "Context Recall",
+}
 
 
 
@@ -559,7 +574,7 @@ def display_ragas_summary(summary):
     """Display RAGAS evaluation summary."""
 
     st.divider()
-    st.header("📊 RAGAS Evaluation Summary")
+    st.header("📊 Evaluation Summary")
 
     # General information
     col1, col2 = st.columns(2)
@@ -1370,8 +1385,26 @@ with end_to_end_tab:
     st.header("End-to-End RAG Evaluation")
 
     st.info(
-    "Evaluate the complete RAG pipeline using four retrieval "
-    "configurations, contextual generation and three RAGAS metrics."
+        "Compare answers generated with retrieved context (RAG) against "
+        "a baseline generated directly from the LLM without retrieval. "
+        "Evaluation metrics are selected through EVAL_METRICS in the .env file."
+    )
+
+    configured_metrics = [
+        metric.strip().lower()
+        for metric in os.getenv(
+            "EVAL_METRICS",
+            "answer_relevancy,bleu,rouge1,rouge2,rouge_l,faithfulness,context_recall",
+        ).split(",")
+        if metric.strip()
+    ]
+
+    st.caption(
+        "Metrics configured for the next run: "
+        + ", ".join(
+            METRIC_LABELS.get(metric, metric)
+            for metric in configured_metrics
+        )
     )
 
     st.subheader("Experiment Dataset")
@@ -1383,16 +1416,12 @@ with end_to_end_tab:
         try:
             e2e_cases = load_cases()
             validate_retrieval_cases(e2e_cases)
-
-            st.success(
-                f"{len(e2e_cases)} valid questions loaded."
-            )
+            st.success(f"{len(e2e_cases)} valid questions loaded.")
         except Exception as exc:
             st.error(f"Could not load dataset: {exc}")
             e2e_cases = []
 
     st.divider()
-
     st.subheader("Retrieval Parameters")
 
     e2e_execution_mode = st.radio(
@@ -1417,7 +1446,6 @@ with end_to_end_tab:
                 index=1,
                 key="e2e_chunk_size",
             )
-
             e2e_top_k = st.selectbox(
                 "Reference top-k",
                 options=TOP_K_VALUES,
@@ -1434,7 +1462,6 @@ with end_to_end_tab:
             step=1,
             key="e2e_overlap",
         )
-
         e2e_selection = st.radio(
             "Corpus selection",
             options=["baseline", "all"],
@@ -1448,11 +1475,10 @@ with end_to_end_tab:
 
     if e2e_execution_mode == "all":
         st.caption(
-            "All combinations of CHUNK_SIZES and TOP_K_VALUES "
-            "will be executed."
+            "All combinations of CHUNK_SIZES and TOP_K_VALUES will be executed."
         )
-    st.divider()
 
+    st.divider()
     st.subheader("Questions to Execute")
 
     e2e_use_limit = st.checkbox(
@@ -1462,7 +1488,6 @@ with end_to_end_tab:
     )
 
     e2e_limit = None
-
     if e2e_use_limit:
         e2e_limit = st.number_input(
             "Maximum number of questions",
@@ -1474,7 +1499,6 @@ with end_to_end_tab:
         )
 
     st.divider()
-
     st.subheader("Index Configuration")
 
     e2e_build_indexes = st.checkbox(
@@ -1484,11 +1508,9 @@ with end_to_end_tab:
     )
 
     st.divider()
-
     st.subheader("Experiment Preview")
 
     if e2e_execution_mode == "all":
-
         experiment_combinations = [
             {
                 "Configuration": f"Chunk {chunk_size} | Top-k {top_k}",
@@ -1498,9 +1520,7 @@ with end_to_end_tab:
             for chunk_size in CHUNK_SIZES
             for top_k in TOP_K_VALUES
         ]
-
     else:
-
         experiment_combinations = [
             {
                 "Configuration": (
@@ -1511,35 +1531,28 @@ with end_to_end_tab:
             }
         ]
 
-    e2e_preview = pd.DataFrame(experiment_combinations)
-
     st.dataframe(
-        e2e_preview,
+        pd.DataFrame(experiment_combinations),
         width="stretch",
         hide_index=True,
     )
 
     st.caption(
         f"{len(experiment_combinations)} retrieval configuration(s) "
-        "will be executed."
+        "will be executed. The LLM-only baseline is generated once per question."
     )
 
     st.divider()
-
     st.subheader("Run End-to-End Experiment")
 
     if st.button(
-        "🚀 Run End-to-End RAG Evaluation",
+        "🚀 Run RAG vs. LLM-only Evaluation",
         type="primary",
         width="stretch",
         disabled=not e2e_cases,
         key="run_e2e",
     ):
-
-        END_TO_END_RESULTS_DIR.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
+        END_TO_END_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
         selection = (
             "all"
@@ -1567,11 +1580,8 @@ with end_to_end_tab:
         ]
 
         if e2e_execution_mode == "all":
-
             command.append("--all-combinations")
-
         else:
-
             command.extend([
                 "--fixed-chunk-size",
                 str(int(e2e_chunk_size)),
@@ -1580,40 +1590,36 @@ with end_to_end_tab:
             ])
 
         if e2e_limit is not None:
-            command.extend([
-                "--limit",
-                str(int(e2e_limit)),
-            ])
+            command.extend(["--limit", str(int(e2e_limit))])
 
         if e2e_build_indexes:
             command.append("--build-indexes")
 
         with st.spinner(
-            "Running retrieval, contextual generation and RAGAS. "
-            "This may take some time..."
+            "Running retrieval, RAG generation, LLM-only generation "
+            "and evaluation. This may take some time..."
         ):
             try:
                 process = execute_command(command)
-
-                save_execution_result(
-                    "e2e_result",
-                    process,
-                )
+                save_execution_result("e2e_result", process)
 
                 if process.returncode == 0:
-                    try:
-                        output = json.loads(process.stdout)
-
-                        st.session_state.e2e_selected_run = Path(
-                            output["output_dir"]
-                        )
-
-                    except (json.JSONDecodeError, KeyError):
+                    # The runner prints progress before its final JSON line.
+                    for output_line in reversed(process.stdout.splitlines()):
+                        try:
+                            output = json.loads(output_line)
+                        except json.JSONDecodeError:
+                            continue
+                        if output.get("output_dir"):
+                            st.session_state.e2e_selected_run = Path(
+                                output["output_dir"]
+                            )
+                            break
+                    else:
                         st.warning(
-                            "Execution completed, but the output "
-                            "directory could not be identified."
+                            "Execution completed, but the output directory "
+                            "could not be identified in the command output."
                         )
-
             except Exception as exc:
                 st.session_state.e2e_result = {
                     "returncode": -1,
@@ -1628,7 +1634,6 @@ with end_to_end_tab:
         )
 
     st.divider()
-
     st.header("Previous End-to-End Experiments")
 
     e2e_runs = get_end_to_end_runs()
@@ -1647,70 +1652,70 @@ with end_to_end_tab:
 
         if comparison_path.exists():
             comparison = load_json_file(comparison_path)
+            selected_metrics = comparison.get("metrics", [])
 
-            st.subheader("Configuration Comparison")
+            if not selected_metrics:
+                # Compatibility with older experiment output.
+                selected_metrics = list(
+                    comparison.get("configurations", [{}])[0]
+                    .get("metrics", {})
+                    .keys()
+                )
 
             metric_labels = {
-                "answer_relevancy": "Answer Relevancy",
-                # "answer_correctness": "Answer Correctness",
-                "faithfulness": "Faithfulness",
-                # "context_precision": "Context Precision",
-                "context_recall": "Context Recall",
+                metric: METRIC_LABELS.get(metric, metric)
+                for metric in selected_metrics
             }
 
-            metric_columns = list(metric_labels.keys())
+            st.subheader("RAG vs. LLM-only Comparison")
 
             comparison_rows = []
 
-            for configuration in comparison.get(
-                "configurations", []
-            ):
+            for configuration in comparison.get("configurations", []):
                 row = {
+                    "Approach": "RAG",
                     "Configuration": (
-                        f"Chunk {configuration['chunk_size']} "
-                        f"| Top-k {configuration['top_k']}"
+                        f"Chunk {configuration.get('chunk_size')} "
+                        f"| Top-k {configuration.get('top_k')}"
                     ),
-                    "Chunk size": configuration["chunk_size"],
-                    "Top-k": configuration["top_k"],
                 }
+                metric_values = configuration.get("metrics", {})
+                for metric in selected_metrics:
+                    row[metric] = metric_values.get(metric, {}).get("mean")
+                comparison_rows.append(row)
 
-                metrics = configuration.get("metrics", {})
-
-                for metric in metric_columns:
-                    values = metrics.get(metric, {})
-                    row[metric] = values.get("mean")
-
+            llm_only_result = comparison.get("llm_only")
+            if llm_only_result:
+                row = {
+                    "Approach": "LLM-only",
+                    "Configuration": "No retrieval",
+                }
+                llm_metrics = llm_only_result.get("metrics", {})
+                for metric in selected_metrics:
+                    row[metric] = llm_metrics.get(metric, {}).get("mean")
                 comparison_rows.append(row)
 
             comparison_df = pd.DataFrame(comparison_rows)
 
             if comparison_df.empty:
                 st.warning("No comparison results available.")
-
             else:
-                # ------------------------------------------------
-                # 1. COMPARISON TABLE
-                # ------------------------------------------------
-
                 st.markdown("#### Metrics Overview")
 
-                display_df = comparison_df.rename(
-                    columns=metric_labels
+                display_df = comparison_df.rename(columns=metric_labels)
+                display_metric_columns = list(metric_labels.values())
+
+                styled_df = display_df.style.format(
+                    {
+                        metric: "{:.4f}"
+                        for metric in display_metric_columns
+                    },
+                    na_rep="N/A",
                 )
 
-                display_metrics = list(metric_labels.values())
-
-                styled_df = (
-                    display_df.style
-                    .format(
-                        {
-                            metric: "{:.4f}"
-                            for metric in display_metrics
-                        },
-                        na_rep="N/A",
-                    )
-                    .highlight_max(
-                        subset=display_metrics,
+                if display_metric_columns:
+                    styled_df = styled_df.highlight_max(
+                        subset=display_metric_columns,
                         axis=0,
                         props=(
                             "background-color: #d4edda; "
@@ -1718,7 +1723,6 @@ with end_to_end_tab:
                             "font-weight: bold;"
                         ),
                     )
-                )
 
                 st.dataframe(
                     styled_df,
@@ -1727,106 +1731,167 @@ with end_to_end_tab:
                 )
 
                 st.caption(
-                    "Each row represents a retrieval configuration. "
-                    "The highest mean score for each metric is highlighted. "
-                    "Higher values indicate better performance."
+                    "Each RAG row represents a retrieval configuration. "
+                    "LLM-only is the no-retrieval baseline. N/A means that "
+                    "a metric is not applicable to that approach."
                 )
 
-                # ------------------------------------------------
-                # 2. METRIC COMPARISON CHART
-                # ------------------------------------------------
+                if selected_metrics:
+                    st.markdown("#### Performance by Metric")
 
-                st.markdown("#### Performance by Metric")
-
-                selected_metric = st.selectbox(
-                    "Select a metric to compare:",
-                    options=metric_columns,
-                    format_func=lambda metric: metric_labels[metric],
-                    key="e2e_comparison_metric",
-                )
-
-                chart_df = comparison_df[
-                    ["Configuration", selected_metric]
-                ].dropna()
-
-                st.bar_chart(
-                    chart_df,
-                    x="Configuration",
-                    y=selected_metric,
-                    height=400,
-                )
-
-                # ------------------------------------------------
-                # 3. BEST CONFIGURATION PER METRIC
-                # ------------------------------------------------
-
-                st.markdown("#### Best Configuration per Metric")
-
-                best_rows = []
-
-                for metric in metric_columns:
-                    valid_results = comparison_df.dropna(
-                        subset=[metric]
+                    selected_metric = st.selectbox(
+                        "Select a metric to compare:",
+                        options=selected_metrics,
+                        format_func=lambda metric: metric_labels[metric],
+                        key="e2e_comparison_metric",
                     )
 
-                    if valid_results.empty:
-                        continue
+                    chart_df = comparison_df[
+                        ["Configuration", selected_metric]
+                    ].dropna()
 
-                    best = valid_results.loc[
-                        valid_results[metric].idxmax()
-                    ]
-
-                    best_rows.append({
-                        "Metric": metric_labels[metric],
-                        "Best configuration": best["Configuration"],
-                        "Mean score": best[metric],
-                    })
-
-                best_df = pd.DataFrame(best_rows)
-
-                st.dataframe(
-                    best_df,
-                    width="stretch",
-                    hide_index=True,
-                    column_config={
-                        "Mean score": st.column_config.NumberColumn(
-                            "Mean score",
-                            format="%.4f",
+                    if not chart_df.empty:
+                        st.bar_chart(
+                            chart_df,
+                            x="Configuration",
+                            y=selected_metric,
+                            height=400,
                         )
-                    },
-                )
+                    else:
+                        st.info("No valid values are available for this metric.")
+
+                    st.markdown("#### Best Result per Metric")
+                    best_rows = []
+
+                    for metric in selected_metrics:
+                        valid_results = comparison_df.dropna(subset=[metric])
+                        if valid_results.empty:
+                            continue
+
+                        best = valid_results.loc[
+                            valid_results[metric].idxmax()
+                        ]
+                        best_rows.append({
+                            "Metric": metric_labels[metric],
+                            "Best approach": best["Approach"],
+                            "Best configuration": best["Configuration"],
+                            "Mean score": best[metric],
+                        })
+
+                    if best_rows:
+                        st.dataframe(
+                            pd.DataFrame(best_rows),
+                            width="stretch",
+                            hide_index=True,
+                            column_config={
+                                "Mean score": st.column_config.NumberColumn(
+                                    "Mean score",
+                                    format="%.4f",
+                                )
+                            },
+                        )
 
             st.divider()
+            st.subheader("Detailed RAG Configuration Results")
 
-            st.subheader("Detailed Configuration Results")
+            configurations = comparison.get("configurations", [])
+            if configurations:
+                selected_setting = st.selectbox(
+                    "Select a RAG configuration:",
+                    options=[
+                        item["setting"] for item in configurations
+                    ],
+                    key="e2e_setting_selector",
+                )
 
-            selected_setting = st.selectbox(
-                "Select a configuration:",
-                options=[
-                    item["setting"]
-                    for item in comparison.get("configurations", [])
-                ],
-                key="e2e_setting_selector",
+                setting_dir = selected_e2e_run / selected_setting
+
+                evaluation_dir = setting_dir / "evaluation"
+                if not evaluation_dir.exists():
+                    evaluation_dir = setting_dir / "ragas"
+
+                summary_path = evaluation_dir / "summary.json"
+                if summary_path.exists():
+                    display_ragas_summary(load_json_file(summary_path))
+
+                predictions_path = setting_dir / "predictions.jsonl"
+                if predictions_path.exists():
+                    predictions = load_jsonl_file(predictions_path)
+                    st.subheader("RAG Generated Answers")
+
+                    for prediction in predictions:
+                        with st.expander(
+                            f"{prediction.get('case_id')} — "
+                            f"{str(prediction.get('user_input', ''))[:90]}"
+                        ):
+                            st.markdown("**Question**")
+                            st.write(prediction.get("user_input"))
+
+                            st.markdown("**Reference answer**")
+                            st.write(prediction.get("reference") or "Not available")
+
+                            st.markdown("**Retrieved Contexts**")
+                            contexts = prediction.get("retrieved_contexts", [])
+                            if contexts:
+                                for index, context in enumerate(contexts, start=1):
+                                    st.markdown(f"Context {index}")
+                                    st.write(context)
+                            else:
+                                st.info("No retrieved contexts.")
+
+                            st.markdown("**Generated Answer**")
+                            st.write(
+                                prediction.get("response")
+                                or "No answer generated."
+                            )
+
+                            st.write(
+                                "Retrieval status: "
+                                f"{prediction.get('retrieval_status')}"
+                            )
+                            st.write(
+                                "Generation status: "
+                                f"{prediction.get('generation_status')}"
+                            )
+
+                            if prediction.get("error"):
+                                st.error(prediction["error"])
+
+                scores_path = evaluation_dir / "scores.jsonl"
+                if scores_path.exists():
+                    with st.expander("Per-case RAG evaluation scores"):
+                        st.dataframe(
+                            pd.DataFrame(load_jsonl_file(scores_path)),
+                            width="stretch",
+                            hide_index=True,
+                        )
+            else:
+                st.info("This experiment contains no RAG configurations.")
+
+            st.divider()
+            st.subheader("LLM-only Baseline Details")
+
+            llm_only_dir = selected_e2e_run / "llm_only"
+            llm_only_evaluation_dir = llm_only_dir / "evaluation"
+            llm_only_summary_path = (
+                llm_only_evaluation_dir / "summary.json"
             )
 
-            setting_dir = selected_e2e_run / selected_setting
+            if llm_only_summary_path.exists():
+                display_ragas_summary(
+                    load_json_file(llm_only_summary_path)
+                )
 
-            ragas_summary_path = (
-                setting_dir / "ragas" / "summary.json"
+            llm_only_predictions_path = (
+                llm_only_dir / "predictions.jsonl"
             )
+            if llm_only_predictions_path.exists():
+                llm_only_predictions = load_jsonl_file(
+                    llm_only_predictions_path
+                )
+                st.markdown("#### LLM-only Generated Answers")
 
-            if ragas_summary_path.exists():
-                summary = load_json_file(ragas_summary_path)
-                display_ragas_summary(summary)
-
-            predictions_path = setting_dir / "predictions.jsonl"
-
-            if predictions_path.exists():
-                predictions = load_jsonl_file(predictions_path)
-
-                st.subheader("Generated Answers")
-
-                for prediction in predictions:
+                for prediction in llm_only_predictions:
                     with st.expander(
                         f"{prediction.get('case_id')} — "
                         f"{str(prediction.get('user_input', ''))[:90]}"
@@ -1834,25 +1899,20 @@ with end_to_end_tab:
                         st.markdown("**Question**")
                         st.write(prediction.get("user_input"))
 
+                        st.markdown("**Reference answer**")
+                        st.write(
+                            prediction.get("reference") or "Not available"
+                        )
+
                         st.markdown("**Retrieved Contexts**")
-                        for index, context in enumerate(
-                            prediction.get("retrieved_contexts", []),
-                            start=1,
-                        ):
-                            st.markdown(f"Context {index}")
-                            st.write(context)
+                        st.caption(
+                            "None — this answer was generated without retrieval."
+                        )
 
                         st.markdown("**Generated Answer**")
                         st.write(
-                            prediction.get(
-                                "response",
-                                "No answer generated.",
-                            )
-                        )
-
-                        st.write(
-                            "Retrieval status: "
-                            f"{prediction.get('retrieval_status')}"
+                            prediction.get("response")
+                            or "No answer generated."
                         )
 
                         st.write(
@@ -1863,14 +1923,14 @@ with end_to_end_tab:
                         if prediction.get("error"):
                             st.error(prediction["error"])
 
-            scores_path = setting_dir / "ragas" / "scores.jsonl"
-
-            if scores_path.exists():
-                with st.expander("Per-case RAGAS scores"):
+            llm_only_scores_path = (
+                llm_only_evaluation_dir / "scores.jsonl"
+            )
+            if llm_only_scores_path.exists():
+                with st.expander("Per-case LLM-only evaluation scores"):
                     st.dataframe(
-                        pd.DataFrame(
-                            load_jsonl_file(scores_path)
-                        ),
+                        pd.DataFrame(load_jsonl_file(llm_only_scores_path)),
                         width="stretch",
                         hide_index=True,
                     )
+
