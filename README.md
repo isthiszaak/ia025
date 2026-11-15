@@ -1,6 +1,33 @@
-# Local RAG Chatbot
+# IA025 — Assistente local com RAG e avaliação
+
+Also documented as **Local RAG Chatbot**, this is a collaborative IA025 course
+project at Unicamp.
 
 A fully local, privacy-first chatbot built with **Streamlit** and **Ollama**. This project sets up a local Large Language Model (LLM) and a frontend chat interface using Docker. It includes automatic hardware detection to seamlessly switch between CPU-only mode and NVIDIA GPU acceleration.
+
+## Branch scope
+
+This branch, `feature/data-retrieval`, publishes the standalone chat interface
+and the data preparation/retrieval module separately. The chat interface in
+this branch does not consume retrieved contexts or run the integrated RAGAS
+evaluation pipeline.
+
+For integrated retrieval, contextual generation, and evaluation, see
+[`feature/data-retrieval-integration`](https://github.com/isthiszaak/ia025/tree/feature/data-retrieval-integration)
+or [`dev`](https://github.com/isthiszaak/ia025/tree/dev), and follow the README
+of the selected branch. The evaluation remains in development; these links
+do not establish RAG superiority or validation for real tax use.
+
+## Team
+
+Public project participants:
+
+- [Isaac Barros — `isthiszaak`](https://github.com/isthiszaak)
+- [`Gui7621`](https://github.com/Gui7621)
+- [Gustavo Nascimento — `enggusttavomn`](https://github.com/enggusttavomn)
+
+The project is collaborative. Branch history records individual contributions;
+repository ownership does not imply sole authorship of the application.
 
 ## 📂 Project Structure
 
