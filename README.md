@@ -38,7 +38,7 @@ Before you begin, ensure you have the following installed on your host machine:
 **1. Clone the Repository**
 
 ```bash
-git clone git@github.com:isthiszaak/ia025.git
+git clone --branch feature/data-retrieval https://github.com/isthiszaak/ia025.git
 cd ia025
 
 ```
@@ -269,6 +269,11 @@ use a real temporary database with deterministic simulated embeddings; they do
 not require Ollama or establish retrieval quality. Real-service checks can be
 repeated by building twice and querying in a fresh process. Data, indexes,
 models, virtual environments, logs, and generated run records are ignored by Git.
+
+GitHub Actions runs the same offline retrieval suite on Linux and Windows with
+Python 3.12. A separate job validates both Compose files and builds the CPU
+application image from `app/`; it does not download models or claim to validate
+GPU inference, Ollama availability, or retrieval quality.
 
 ### Planned retrieval comparisons and handoff
 

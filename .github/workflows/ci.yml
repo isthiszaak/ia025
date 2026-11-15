@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  retrieval:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: app/retrieval/requirements.txt
+      - name: Install retrieval dependencies
+        run: python -m pip install -r app/retrieval/requirements.txt
+      - name: Check dependency consistency
+        run: python -m pip check
+      - name: Run offline retrieval tests
+        run: python -m unittest discover -s tests -v
+
+  containers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate CPU and GPU Compose configurations
+        run: |
+          cp .env.example .env
+          docker compose --env-file .env.example -f docker-compose.cpu.yaml config --quiet
+          docker compose --env-file .env.example -f docker-compose.gpu.yaml config --quiet
+      - name: Build the CPU application image
+        run: docker compose --env-file .env.example -f docker-compose.cpu.yaml build streamlit
