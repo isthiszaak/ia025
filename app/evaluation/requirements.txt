@@ -3,3 +3,7 @@ ragas==0.4.3
 langchain-community==0.4.1
 openai>=1.0.0
 python-dotenv>=1.0.0
+numpy 
+pandas 
+matplotlib 
+scipy
