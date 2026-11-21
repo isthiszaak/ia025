@@ -1,0 +1,23 @@
+setting,case_id,stage,metric,reason_excerpt,reason_sha256
+tokens-256-topk-1,qa_2024_0048,evaluation,faithfulness,"IncompleteOutputException: IncompleteOutputException() | last_completion=ChatCompletion(id='chatcmpl-21', choices=[Choice(finish_reason='length', index=0, logprobs=None, message=ChatCompletionMessage(content='{\n  ""statements"": [\n    ""1234567890"",\n    ""1234567890"",\n    ""1234567890"",\n    ""1234567890"",\n    ""1234567890"",\n    ""1234567890"",\n    ""1234567890"",\n    ""1234567890"",\n    ""1234567890"",\n    ""1234567890"",\n    ""1234567890"",\n    ""12345",0466243acd089b700118c01501cb646461492372f12791bb2ffe578d744b8bb3
+tokens-256-topk-1,qa_2024_0119,evaluation,faithfulness,TimeoutError: TimeoutError() | last_completion=None,546061ce735fed068c8fc08bbd9c29d0ce16763a74907251080133cf91e268c5
+tokens-256-topk-3,qa_2024_0109,evaluation,answer_relevancy,"InstructorRetryException: InstructorRetryException(2 validation errors for AnswerRelevanceOutput
+question
+  Field required [type=missing, input_value={'585': {'question': 'Inf...o.', 'noncommittal': 0}}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.14/v/missing
+noncommittal
+  Field required [type=missing, input_value={'585': {'question': 'Inf...o.', 'noncommittal': 0}}, input_type=dict]
+    For further informat",af8983861abe235976e6c41925210bcf5fb1323ed28a954746861534da9decfd
+tokens-256-topk-3,qa_2024_0117,evaluation,answer_relevancy,"IncompleteOutputException: IncompleteOutputException() | last_completion=ChatCompletion(id='chatcmpl-920', choices=[Choice(finish_reason='length', index=0, logprobs=None, message=ChatCompletionMessage(content='{\n  ""language"": ""English"",\n  ""topics"": [\n    ""Introduction to the language"",\n    ""Basic grammar and sentence structure"",\n    ""Vocabulary building"",\n    ""Reading and writing practice"",\n    ""Listening and speaking exercises"",\n    ""Cul",ab9b5f57e10fe17c2cb3c1cc9aa8b7b9b2d88a7a75ccd035ca2ca54c4daefea5
+tokens-256-topk-3,qa_2024_0117,evaluation,faithfulness,"IncompleteOutputException: IncompleteOutputException() | last_completion=ChatCompletion(id='chatcmpl-239', choices=[Choice(finish_reason='length', index=0, logprobs=None, message=ChatCompletionMessage(content='{\n  ""language"": ""English"",\n  ""topics"": [\n    ""Introduction to the language"",\n    ""Basic grammar and sentence structure"",\n    ""Vocabulary building"",\n    ""Reading and writing practice"",\n    ""Listening and speaking exercises"",\n    ""Cul",ce6edfa0647d964ef0fe79214264cb75e301a7c65aba7b446f0ec766c2e4ed11
+tokens-512-topk-1,qa_2024_0079,evaluation,answer_relevancy,"InstructorRetryException: InstructorRetryException(2 validation errors for AnswerRelevanceOutput
+question
+  Field required [type=missing, input_value={'601': {'question': 'Wha...'?"", 'noncommittal': 0}}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.14/v/missing
+noncommittal
+  Field required [type=missing, input_value={'601': {'question': 'Wha...'?"", 'noncommittal': 0}}, input_type=dict]
+    For further informat",cca64614f8acc98381192823dcabbee1ceac1ccc47a14eeb5a0075fb52d7870d
+tokens-512-topk-3,qa_2024_0095,generation,,"prediction aborted, token repeat limit reached (status code: -1)",97603a8f2477fab7f646714c49fcf9f35ecb37e79ac6b7179416b7766ad8bcde
+tokens-512-topk-3,qa_2024_0031,evaluation,context_recall,"IncompleteOutputException: IncompleteOutputException() | last_completion=ChatCompletion(id='chatcmpl-220', choices=[Choice(finish_reason='length', index=0, logprobs=None, message=ChatCompletionMessage(content='{\n    ""classifications"": [\n        {\n            ""statement"": ""É vedado o preenchimento e a apresentação da declaração por meio do “Meu Imposto de Renda”, consulte o item II da Pergunta 026, nas hipóteses de os declarantes ou seus depend",5862622e1668a1962a63058ee5d6660759879e474187c40bde5fa3aad5813ac1
+tokens-512-topk-3,qa_2024_0066,evaluation,context_recall,"InternalServerError: InternalServerError(""Error code: 500 - {'error': {'message': 'prediction aborted, token repeat limit reached', 'type': 'api_error', 'param': None, 'code': None}}"") | last_completion=None",3fb1d2fc7ad47c56305bd120feef3018909ab1dbdf937762cbb18325d54e8394
+tokens-512-topk-3,qa_2024_0093,evaluation,context_recall,"InternalServerError: InternalServerError(""Error code: 500 - {'error': {'message': 'prediction aborted, token repeat limit reached', 'type': 'api_error', 'param': None, 'code': None}}"") | last_completion=None",3fb1d2fc7ad47c56305bd120feef3018909ab1dbdf937762cbb18325d54e8394

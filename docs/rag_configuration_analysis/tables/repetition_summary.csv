@@ -1,0 +1,5 @@
+setting,n_long,n_long_with_tail_4gram_repetition_above_80pct,median_tail_repetition_long,median_response_characters_all
+tokens-256-topk-1,7,5,0.8232348522784176,365.5
+tokens-256-topk-3,18,16,0.8833249874812218,336.0
+tokens-512-topk-1,18,17,0.8713069604406609,408.0
+tokens-512-topk-3,22,20,0.8800701051577366,353.0

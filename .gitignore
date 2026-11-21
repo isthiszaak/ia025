@@ -240,3 +240,7 @@ data/retrieval/
 data/retrieval-carf/
 retrieval_results/
 .cache/
+
+# Local experiment inputs and presentation material
+files_ia_025/
+/local_presentation/

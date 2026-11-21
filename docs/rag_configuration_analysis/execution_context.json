@@ -1,0 +1,23 @@
+{
+  "confirmation_date": "2026-11-21",
+  "same_machine_for_four_source_batches": true,
+  "confirmation_source": "Relato do executor dos experimentos, confirmado em 21 de novembro de 2026; sem verificação independente por logs históricos",
+  "custom_modelfile_used": false,
+  "explicit_generator_output_limit_configured": false,
+  "generator_output_token_limit": null,
+  "generator_output_token_limit_status": "O executor informou não ter usado configuração específica ou Modelfile; o valor efetivo aplicado pelo Ollama não foi estabelecido",
+  "same_generation_sampling_settings_across_batches": true,
+  "models_loaded_only_at_start_reported": true,
+  "comparable_rag_and_llm_only_conditions_reported": true,
+  "concurrent_tasks_absent": null,
+  "gpu": {"model": "RTX 4050", "vram_capacity_gb": 6},
+  "reported_models": {
+    "generator": {"model": "qwen2.5:1.5b", "reported_file_size": "986 MB"},
+    "evaluator": {"model": "qwen2.5:7b", "reported_file_size": "4.7 GB"},
+    "embedding": {"model": "embeddinggemma", "reported_file_size": "621 MB"}
+  },
+  "ollama_version": null,
+  "model_digests": null,
+  "hardware_monitoring_available": false,
+  "notes": "Constância de parâmetros e carregamento inicial foram relatados pelo executor. Valores efetivos de seed, janela de contexto e limite de saída não foram recuperados de logs. Condições similares não comprovam ausência de concorrência. Tamanhos dos arquivos dos modelos não são medições de VRAM. O limite max_tokens do evaluator não deve ser interpretado como limite do gerador."
+}
